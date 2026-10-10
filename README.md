@@ -1,6 +1,6 @@
 # Pokket
 
-- This is getting a little more popular than I thought - firstly thank you. But second I think I need to preempt a potential headache. I will be rebranding this just to pokket soon to avoid trouble for the repo down the road. Also look forward to a ps1 emulator with proper pocketstation support soon.
+> **Libretro builds:** the buildbot core is out of date while I move it to the new name. After the fix, install **Pokket** from the core downloader and delete the old **pokketstation** core. If you sort saves by core name, move your `.srm` files from the `pokketstation` save folder to `Pokket`.
 
 This is an open-source Sony PocketStation emulator core, written in portable C. It is made for use in a [libretro](https://www.libretro.com/) core, a standalone Windows desktop app and JavaScript for the browser. 
 
