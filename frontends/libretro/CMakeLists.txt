@@ -7,12 +7,12 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(libretro-common)
 
-add_library(pokketstation_libretro MODULE libretro.c)
-target_include_directories(pokketstation_libretro PRIVATE ${libretro-common_SOURCE_DIR}/include)
-target_link_libraries(pokketstation_libretro PRIVATE psemu)
-set_target_properties(pokketstation_libretro PROPERTIES
+add_library(pokket_libretro MODULE libretro.c)
+target_include_directories(pokket_libretro PRIVATE ${libretro-common_SOURCE_DIR}/include)
+target_link_libraries(pokket_libretro PRIVATE psemu)
+set_target_properties(pokket_libretro PROPERTIES
     PREFIX ""
-    OUTPUT_NAME "pokketstation_libretro"
+    OUTPUT_NAME "pokket_libretro"
 )
 
 # CMake gives MODULE libraries a .so suffix on Apple, but libretro (and the
@@ -23,5 +23,5 @@ set_target_properties(pokketstation_libretro PROPERTIES
 # Linux/webOS, .dll on Windows, and the android template renames the plain
 # .so to ${CORENAME}_libretro_android.so itself.
 if(APPLE)
-    set_target_properties(pokketstation_libretro PROPERTIES SUFFIX ".dylib")
+    set_target_properties(pokket_libretro PROPERTIES SUFFIX ".dylib")
 endif()

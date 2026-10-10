@@ -28,7 +28,7 @@ int main(int argc, char *argv[]) {
     vita2d_set_clear_color(RGBA8(0xFF, 0xFF, 0xFF, 0xFF));
 
     psemu_t *ps = psemu_create();
-    /* TODO: load a BIOS dump and an app from ux0:data/pokketstation/ after
+    /* TODO: load a BIOS dump and an app from ux0:data/pokket/ after
        a file selection screen is available.
        At this time, this code tests only the render loop. */
     psemu_reset(ps);

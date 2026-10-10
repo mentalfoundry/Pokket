@@ -191,7 +191,7 @@ static void write_diagnostic_report(
     struct tm *tmv = localtime(&now);
     FILE *f;
 
-    strftime(path, sizeof(path), "pokketstation_report_%Y%m%d_%H%M%S.log", tmv);
+    strftime(path, sizeof(path), "pokket_report_%Y%m%d_%H%M%S.log", tmv);
     f = fopen(path, "w");
     if (!f) {
         fprintf(stderr, "psemu: failed to write diagnostic report to %s\n", path);
@@ -975,7 +975,7 @@ typedef struct {
 } menu_context_t;
 
 /* Shows the live status of the IR link as the full window title, for example
-   "IR - Connected". This title replaces the usual "pokketstation" title while the link is active. The
+   "IR - Connected". This title replaces the usual "Pokket" title while the link is active. The
    text is deliberately short: the default window is small, thus Windows cuts a longer title. The status
    is the one item that a user must see quickly.
    The hosting state and the connecting state get their own short strings. They do not use the text of
@@ -990,7 +990,7 @@ typedef struct {
 static void ir_link_refresh_title(menu_context_t *ctx) {
     char title[192];
     if (!ir_link_is_active(ctx->ir_link)) {
-        snprintf(title, sizeof(title), "pokketstation");
+        snprintf(title, sizeof(title), "Pokket");
     } else if (ctx->ir_link->state == IR_LINK_HOSTING) {
         snprintf(title, sizeof(title), "IR - Waiting...");
     } else if (ctx->ir_link->state == IR_LINK_CONNECTING) {
@@ -1031,11 +1031,11 @@ static void prompt_open_bios(menu_context_t *ctx) {
     size_t new_size = 0;
     uint8_t *new_bios = read_file(path, &new_size);
     if (!new_bios) {
-        MessageBoxA(ctx->hwnd, "Couldn't read that file.", "pokketstation", MB_ICONERROR);
+        MessageBoxA(ctx->hwnd, "Couldn't read that file.", "Pokket", MB_ICONERROR);
         return;
     }
     if (psemu_load_bios(ctx->ps, new_bios, new_size) != PSEMU_OK) {
-        MessageBoxA(ctx->hwnd, "Not a valid BIOS image (expected a 16384-byte dump).", "pokketstation", MB_ICONERROR);
+        MessageBoxA(ctx->hwnd, "Not a valid BIOS image (expected a 16384-byte dump).", "Pokket", MB_ICONERROR);
         free(new_bios);
         return;
     }
@@ -1071,11 +1071,11 @@ static void prompt_open_app(menu_context_t *ctx) {
     size_t new_size = 0;
     uint8_t *new_app = read_file(path, &new_size);
     if (!new_app) {
-        MessageBoxA(ctx->hwnd, "Couldn't read that file.", "pokketstation", MB_ICONERROR);
+        MessageBoxA(ctx->hwnd, "Couldn't read that file.", "Pokket", MB_ICONERROR);
         return;
     }
     if (psemu_load_content(ctx->ps, new_app, new_size) != PSEMU_OK) {
-        MessageBoxA(ctx->hwnd, "Not a valid app or memory-card image.", "pokketstation", MB_ICONERROR);
+        MessageBoxA(ctx->hwnd, "Not a valid app or memory-card image.", "Pokket", MB_ICONERROR);
         free(new_app);
         return;
     }
@@ -1117,7 +1117,7 @@ static void save_state_to_slot(menu_context_t *ctx, int slot) {
     size_t total_size = sizeof(quicksave_header_t) + state_size;
     uint8_t *buf = (uint8_t *)malloc(total_size);
     if (!buf) {
-        MessageBoxA(ctx->hwnd, "Out of memory.", "pokketstation", MB_ICONERROR);
+        MessageBoxA(ctx->hwnd, "Out of memory.", "Pokket", MB_ICONERROR);
         return;
     }
 
@@ -1132,7 +1132,7 @@ static void save_state_to_slot(menu_context_t *ctx, int slot) {
     FILE *f = fopen(path, "wb");
     if (!f || fwrite(buf, 1, total_size, f) != total_size) {
         snprintf(msg, sizeof(msg), "Couldn't write the save state file for %s.", save_slot_label(slot));
-        MessageBoxA(ctx->hwnd, msg, "pokketstation", MB_ICONERROR);
+        MessageBoxA(ctx->hwnd, msg, "Pokket", MB_ICONERROR);
     }
     if (f) {
         fclose(f);
@@ -1148,7 +1148,7 @@ static void load_state_from_slot(menu_context_t *ctx, int slot) {
     FILE *f = fopen(path, "rb");
     if (!f) {
         snprintf(msg, sizeof(msg), "No save state in %s for the currently loaded app/card.", save_slot_label(slot));
-        MessageBoxA(ctx->hwnd, msg, "pokketstation", MB_ICONWARNING);
+        MessageBoxA(ctx->hwnd, msg, "Pokket", MB_ICONWARNING);
         return;
     }
 
@@ -1156,7 +1156,7 @@ static void load_state_from_slot(menu_context_t *ctx, int slot) {
     if (fread(&header, 1, sizeof(header), f) != sizeof(header) || memcmp(header.magic, QUICKSAVE_MAGIC, 4) != 0 ||
         header.version != QUICKSAVE_VERSION) {
         snprintf(msg, sizeof(msg), "The file for %s isn't a valid save state.", save_slot_label(slot));
-        MessageBoxA(ctx->hwnd, msg, "pokketstation", MB_ICONERROR);
+        MessageBoxA(ctx->hwnd, msg, "Pokket", MB_ICONERROR);
         fclose(f);
         return;
     }
@@ -1165,7 +1165,7 @@ static void load_state_from_slot(menu_context_t *ctx, int slot) {
     if (header.app_size != (uint32_t)*ctx->app_size || header.app_hash != current_hash) {
         snprintf(msg, sizeof(msg), "The save state in %s doesn't match the currently loaded app/card.",
             save_slot_label(slot));
-        MessageBoxA(ctx->hwnd, msg, "pokketstation", MB_ICONERROR);
+        MessageBoxA(ctx->hwnd, msg, "Pokket", MB_ICONERROR);
         fclose(f);
         return;
     }
@@ -1186,7 +1186,7 @@ static void load_state_from_slot(menu_context_t *ctx, int slot) {
     long body_start = ftell(f);
     if (body_start < 0 || fseek(f, 0, SEEK_END) != 0) {
         snprintf(msg, sizeof(msg), "Couldn't read the save state in %s.", save_slot_label(slot));
-        MessageBoxA(ctx->hwnd, msg, "pokketstation", MB_ICONERROR);
+        MessageBoxA(ctx->hwnd, msg, "Pokket", MB_ICONERROR);
         fclose(f);
         return;
     }
@@ -1194,7 +1194,7 @@ static void load_state_from_slot(menu_context_t *ctx, int slot) {
     if (body_size != (long)state_size || fseek(f, body_start, SEEK_SET) != 0) {
         snprintf(msg, sizeof(msg), "Couldn't load the save state in %s (wrong build/version?).",
             save_slot_label(slot));
-        MessageBoxA(ctx->hwnd, msg, "pokketstation", MB_ICONERROR);
+        MessageBoxA(ctx->hwnd, msg, "Pokket", MB_ICONERROR);
         fclose(f);
         return;
     }
@@ -1203,7 +1203,7 @@ static void load_state_from_slot(menu_context_t *ctx, int slot) {
     if (!buf || fread(buf, 1, state_size, f) != state_size || psemu_load_state(ctx->ps, buf, state_size) != PSEMU_OK) {
         snprintf(msg, sizeof(msg), "Couldn't load the save state in %s (wrong build/version?).",
             save_slot_label(slot));
-        MessageBoxA(ctx->hwnd, msg, "pokketstation", MB_ICONERROR);
+        MessageBoxA(ctx->hwnd, msg, "Pokket", MB_ICONERROR);
         free(buf);
         fclose(f);
         return;
@@ -1245,7 +1245,7 @@ static INT_PTR CALLBACK hwid_dialog_proc(HWND hdlg, UINT msg, WPARAM wparam, LPA
             char text[PSEMU_HARDWARE_ID_STRING_SIZE];
             GetDlgItemTextA(hdlg, IDC_HWID_EDIT, text, sizeof(text));
             if (!psemu_parse_hardware_id(text, &data->parsed_id)) {
-                MessageBoxA(hdlg, "Expected exactly 8 hex digits (0-9, A-F).", "pokketstation", MB_ICONERROR);
+                MessageBoxA(hdlg, "Expected exactly 8 hex digits (0-9, A-F).", "Pokket", MB_ICONERROR);
                 return TRUE;
             }
             EndDialog(hdlg, IDOK);
@@ -1823,7 +1823,7 @@ static INT_PTR CALLBACK advanced_colors_dialog_proc(HWND hdlg, UINT msg, WPARAM 
             if (!parse_hex_rgb(pixel_text, &px_r, &px_g, &px_b) || !parse_hex_rgb(bg_text, &bg_r, &bg_g, &bg_b)
                 || !parse_hex_rgb(shadow_text, &sh_r, &sh_g, &sh_b)) {
                 MessageBoxA(hdlg, "Every color needs exactly 6 hex digits (0-9, A-F), e.g. \"1A2B3C\".",
-                    "pokketstation", MB_ICONERROR);
+                    "Pokket", MB_ICONERROR);
                 return TRUE;
             }
             data->parsed_pixel_rgba = RGBA_PACK(px_r, px_g, px_b);
@@ -2018,12 +2018,12 @@ static void prompt_remap_controls(menu_context_t *ctx) {
 static INT_PTR CALLBACK about_dialog_proc(HWND hdlg, UINT msg, WPARAM wparam, LPARAM lparam) {
     switch (msg) {
     case WM_INITDIALOG:
-        SetDlgItemTextA(hdlg, IDC_ABOUT_VERSION, "pokketstation " POKKETSTATION_VERSION);
+        SetDlgItemTextA(hdlg, IDC_ABOUT_VERSION, "Pokket " POKKETSTATION_VERSION);
         return TRUE;
     case WM_NOTIFY: {
         NMHDR *nmhdr = (NMHDR *)lparam;
         if (nmhdr->idFrom == IDC_ABOUT_LINK && (nmhdr->code == NM_CLICK || nmhdr->code == NM_RETURN)) {
-            ShellExecuteA(hdlg, "open", "https://github.com/mentalfoundry/pokketstation", NULL, NULL, SW_SHOWNORMAL);
+            ShellExecuteA(hdlg, "open", "https://github.com/mentalfoundry/Pokket", NULL, NULL, SW_SHOWNORMAL);
             return TRUE;
         }
         if (nmhdr->idFrom == IDC_ABOUT_LICENSE_LINK && (nmhdr->code == NM_CLICK || nmhdr->code == NM_RETURN)) {
@@ -2093,7 +2093,7 @@ static INT_PTR CALLBACK ir_address_dialog_proc(HWND hdlg, UINT msg, WPARAM wpara
             ir_address_dialog_data_t *data = (ir_address_dialog_data_t *)GetWindowLongPtrA(hdlg, GWLP_USERDATA);
             GetDlgItemTextA(hdlg, IDC_IR_ADDRESS_EDIT, data->address, (int)sizeof(data->address));
             if (data->address[0] == '\0') {
-                MessageBoxA(hdlg, "Enter an address.", "pokketstation", MB_ICONERROR);
+                MessageBoxA(hdlg, "Enter an address.", "Pokket", MB_ICONERROR);
                 return TRUE;
             }
             EndDialog(hdlg, IDOK);
@@ -2659,7 +2659,7 @@ int main(int argc, char **argv) {
        Thus a change to any size operates with no extra code.
        View > Native Size and View > Double Size are only a method to return to a
        known size. They are not the only sizes that this app supports. */
-    SDL_Window *window = SDL_CreateWindow("pokketstation", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+    SDL_Window *window = SDL_CreateWindow("Pokket", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         PSEMU_LCD_WIDTH * SCALE, PSEMU_LCD_HEIGHT * SCALE, SDL_WINDOW_RESIZABLE);
     SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     SDL_Texture *texture = SDL_CreateTexture(
@@ -2762,7 +2762,7 @@ int main(int argc, char **argv) {
         {resolve_key_binding(settings.key_quick_load, SDL_SCANCODE_F9), 0, "Load State"},
     };
 
-    fprintf(stderr, "psemu: press %s at any time to write a diagnostic report to a pokketstation_report_*.log file\n",
+    fprintf(stderr, "psemu: press %s at any time to write a diagnostic report to a pokket_report_*.log file\n",
         SDL_GetScancodeName(button_scancodes[5].scancode));
 
     menu_context_t menu_ctx;

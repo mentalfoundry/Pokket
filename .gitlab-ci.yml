@@ -18,7 +18,7 @@
 # Core definitions
 .core-defs:
   variables:
-    CORENAME: pokketstation
+    CORENAME: pokket
     CORE_ARGS: -DCMAKE_BUILD_TYPE=Release
 
 # Inclusion templates, required for the build to work

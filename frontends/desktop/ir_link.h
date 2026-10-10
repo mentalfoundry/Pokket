@@ -8,7 +8,7 @@
 
 /* An IR link between two instances.
    It connects psemu_ir_pop_tx_edge and psemu_ir_push_rx_edge of this instance (see psemu.h) to a
-   different pokketstation.exe process. Thus two independent emulator instances can exchange real IR
+   different pokket.exe process. Thus two independent emulator instances can exchange real IR
    signals. This is the same operation as two physical PocketStation units that a user holds together.
 
    This file holds the timing of the link. ir_transport.h holds the movement of bytes. A transport gives

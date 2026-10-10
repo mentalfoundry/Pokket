@@ -1,4 +1,4 @@
-# pokket
+# Pokket
 
 - This is getting a little more popular than I thought - firstly thank you. But second I think I need to preempt a potential headache. I will be rebranding this just to pokket soon to avoid trouble for the repo down the road. Also look forward to a ps1 emulator with proper pocketstation support soon.
 
@@ -8,7 +8,7 @@ This is an open-source Sony PocketStation emulator core, written in portable C. 
 
 ## Status
 
-This project is stable, and the community has tested it widely. It is as cycle-accurate as possible. If you need a feature that is not present, please [raise an issue](https://github.com/mentalfoundry/pokketstation/issues).
+This project is stable, and the community has tested it widely. It is as cycle-accurate as possible. If you need a feature that is not present, please [raise an issue](https://github.com/mentalfoundry/Pokket/issues).
 
 Do not depend on save-state compatibility between versions yet. The internal registries may need more changes although there aren't many unknowns left hardware wise and none that make a difference to the emulation (as far as I know).
 
@@ -17,11 +17,11 @@ Do not depend on save-state compatibility between versions yet. The internal reg
 
 See [docs/hardware-notes.md](docs/hardware-notes.md) for the technical data.
 
-If the emulator stops, or if it stops with an unrecognized-opcode fault, please [open an issue](https://github.com/mentalfoundry/pokketstation/issues). Include a [diagnostic report](docs/desktop_readme.md#diagnostic-reports-for-bug-reports) if you can. A report makes the fault much easier to find.
+If the emulator stops, or if it stops with an unrecognized-opcode fault, please [open an issue](https://github.com/mentalfoundry/Pokket/issues). Include a [diagnostic report](docs/desktop_readme.md#diagnostic-reports-for-bug-reports) if you can. A report makes the fault much easier to find.
 
 ## Usage
 
-Download the latest [release](https://github.com/mentalfoundry/pokketstation/releases) package for your platform. Then follow the usage guide for the frontend that you downloaded. **Neither package contains a PocketStation BIOS.** The BIOS is copyrighted Sony firmware. You must supply your own dump, from real hardware.
+Download the latest [release](https://github.com/mentalfoundry/Pokket/releases) package for your platform. Then follow the usage guide for the frontend that you downloaded. **Neither package contains a PocketStation BIOS.** The BIOS is copyrighted Sony firmware. You must supply your own dump, from real hardware.
 
 - [Desktop app](docs/desktop_readme.md#usage)
 - [Libretro core](docs/libretro_readme.md#usage)

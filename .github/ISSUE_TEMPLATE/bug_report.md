@@ -14,7 +14,7 @@ Give a clear, short description of the fault.
 
 **How to cause the fault**
 Give the steps that cause the behavior:
-1. The version of pokketstation that you use.
+1. The version of Pokket that you use.
 2. The PocketStation app that has the fault.
 3. Select '....'
 4. Press [key] to move to '....'

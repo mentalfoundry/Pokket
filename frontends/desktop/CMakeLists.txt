@@ -22,16 +22,14 @@ enable_language(RC)
 # alongside the SDL window by default. main() still gets a normal argc/argv
 # via SDL2::SDL2main's WinMain shim; pass --console to opt back into a
 # visible console for stderr diagnostics (see main.c).
-add_executable(pokketstation_desktop WIN32 main.c ir_link.c ir_transport.c ir_transport_pipe.c ir_transport_tcp.c content_writeback.c resource.rc)
+add_executable(pokket_desktop WIN32 main.c ir_link.c ir_transport.c ir_transport_pipe.c ir_transport_tcp.c content_writeback.c resource.rc)
 # comctl32 - the About dialog's SysLink control (Help > About's clickable
 # repo link); shell32 - ShellExecuteA, to actually open it in a browser.
-target_link_libraries(pokketstation_desktop PRIVATE psemu SDL2::SDL2 SDL2::SDL2main comdlg32 comctl32 shell32 ws2_32)
+target_link_libraries(pokket_desktop PRIVATE psemu SDL2::SDL2 SDL2::SDL2main comdlg32 comctl32 shell32 ws2_32)
 
-# CMake target name stays pokketstation_desktop (matches the
-# pokketstation_libretro/pokketstation_vita naming convention and anything
-# already scripted against --target pokketstation_desktop) - only the
-# produced binary's filename changes, to plain pokketstation.exe.
-set_target_properties(pokketstation_desktop PROPERTIES OUTPUT_NAME "pokketstation")
+# The target name is pokket_desktop, the same pattern as pokket_libretro and
+# pokket_vita. The output file name is pokket.exe.
+set_target_properties(pokket_desktop PROPERTIES OUTPUT_NAME "pokket")
 
 # Manually-run verification tool for the real named-pipe transport in ir_transport_pipe.c, and for the
 # timing above it in ir_link.c. See ir_link_selftest.c's top comment. It is not wired into CTest. It

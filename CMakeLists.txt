@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
-project(pokketstation C)
+project(pokket C)
 
 # The libretro buildbot's shared CI templates (see gitlab-ci.yml) grab the
 # built core from a fixed, flat path under the build tree ($BUILD_DIR,
 # optionally + $EXTRA_PATH) - without this, single-config generators
-# (Linux/macOS/Android/webOS) would bury pokketstation_libretro.{so,dylib}
+# (Linux/macOS/Android/webOS) would bury pokket_libretro.{so,dylib}
 # under frontends/libretro/ instead, since that's the add_subdirectory()
 # that actually defines the target. Multi-config generators (the Windows
 # MSVC template) still append their own Release/Debug subfolder on top of

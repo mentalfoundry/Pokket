@@ -48,7 +48,7 @@ unsigned retro_api_version(void) {
 
 void retro_get_system_info(struct retro_system_info *info) {
     memset(info, 0, sizeof(*info));
-    info->library_name = "pokketstation";
+    info->library_name = "Pokket";
     info->library_version = "0.1";
     info->valid_extensions = "mcr|mcs|pss|mcd|bin|gme";
     info->need_fullpath = false;
@@ -149,7 +149,7 @@ static void check_savedata_identity(void) {
     }
     if (log_cb) {
         log_cb(RETRO_LOG_WARN,
-               "[pokketstation] Save data holds a different memory card than the loaded content, and "
+               "[Pokket] Save data holds a different memory card than the loaded content, and "
                "has replaced it. If you edited this card outside RetroArch, delete its .srm and "
                "reload.\n");
     }

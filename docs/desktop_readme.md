@@ -4,13 +4,13 @@ This is an SDL2 standalone app for Windows.
 
 ## Usage
 
-A prebuilt release contains `pokketstation.exe` directly. A build from source puts the file at `build\Debug\pokketstation.exe`. The exact path depends on your `--config` value; see [Building](#building) below. In both conditions, execute:
+A prebuilt release contains `pokket.exe` directly. A build from source puts the file at `build\Debug\pokket.exe`. The exact path depends on your `--config` value; see [Building](#building) below. In both conditions, execute:
 ```
-pokketstation.exe [--console|--no-console] <bios.bin> <app-or-card-file>
+pokket.exe [--console|--no-console] <bios.bin> <app-or-card-file>
 ```
 The example below uses a real BIOS dump and a memory-card image. Use your own paths; neither file is part of this project. **This project supplies no PocketStation BIOS.** The BIOS is copyrighted Sony firmware. You must supply your own dump, from real hardware:
 ```
-pokketstation.exe .\bios.bin .\samplememcard.mcd
+pokket.exe .\bios.bin .\samplememcard.mcd
 ```
 - **The extension of the second file has no effect.** This app selects the loader from the content:
   - If the size of the file is exactly the real flash size, the app loads it as a full memory-card image (`.mcd`). Use the keyboard to move through its real BIOS menu, the same as on real hardware.
@@ -49,7 +49,7 @@ pokketstation.exe .\bios.bin .\samplememcard.mcd
   Also, **the override needs a BIOS that this project traced**. This setting is in usual RAM, at an address that a trace of a real BIOS found. No published register map gives it. Thus, on an unknown BIOS revision, the same address has a different function. The menu becomes unavailable in that condition; the app does not write to the address. See [hardware-notes.md](hardware-notes.md) for the method that found the address.
 
   An override of the date and time also means that the emulated clock continues to advance while the app is closed. That behavior is nearer to a real PocketStation, whose clock operates from the battery at each time.
-- **Help > About pokketstation...** shows the version and a link to this repository.
+- **Help > About Pokket...** shows the version and a link to this repository.
 - **IR Link** connects two copies of this app over IR. This is the same as two physical PocketStation units that a user holds together for local multiplayer. See [IR Link](#ir-link) below.
 - **Save write-back** keeps the file that you opened in agreement with the changes that an app makes. Thus the progress of an app continues after you close the window. An edit that an app makes to the save of the PS1 game also continues. The app keeps a backup of the original file. See [Save write-back](#save-write-back) below.
 
@@ -57,10 +57,10 @@ A single-app load (`.pss` or `.mcs`) boots through the real BIOS menu, the same 
 
 ## IR Link
 
-Two separate copies of `pokketstation.exe` can exchange real IR signals, on one machine or across a network. Each copy is an independent emulator, with its own window, its own loaded BIOS and app, and its own save state. IR is the only connection between them, the same as two real PocketStation units.
+Two separate copies of `pokket.exe` can exchange real IR signals, on one machine or across a network. Each copy is an independent emulator, with its own window, its own loaded BIOS and app, and its own save state. IR is the only connection between them, the same as two real PocketStation units.
 
 **To connect two copies on one machine:**
-1. Start `pokketstation.exe` two times. For example, execute it one time, and then start it again with a double click, or start a second copy from a terminal. You then have two separate windows.
+1. Start `pokket.exe` two times. For example, execute it one time, and then start it again with a double click, or start a second copy from a terminal. You then have two separate windows.
 2. In one window, select **IR Link > Host Local Session**. The title bar shows "IR - Waiting...".
 3. In the other window, select **IR Link > Connect Local Session**. The title bar shows "IR - Connecting..." until the two copies find each other, which is usually immediate. Both title bars then show "IR - Connected".
 4. Use each copy normally. The IR port operations of the loaded app now reach the other copy.
@@ -120,7 +120,7 @@ set PATH=C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\ID
 
 **2. Move to the repository with `cd`.** If the repository is on a different drive from the current drive of your terminal, `cd` alone does not change the drive. Use `/d`:
 ```
-cd /d D:\path\to\pokketstation
+cd /d D:\path\to\Pokket
 ```
 
 **3. Configure and build.** The Visual Studio generator of CMake is a "multi-config" generator: a Debug build and a Release build exist together. Supply the same `--config` value to the build step and the test step:
@@ -159,7 +159,7 @@ The desktop app can write a detailed diagnostic report to a log file, in two con
 - **Automatically**, the first time that the CPU meets an unrecognized or unimplemented opcode. This condition is always a fault in the emulator; you did not cause it. The emulator does not stop. It stops execution of the CPU, holds the last correct frame, and prints a message with the name of the report. That message is visible only if you started the app with `--console` (see above).
 - **When you press F12**, at any time. Use this method for each condition that does not cause a fault but still looks incorrect: incorrect graphics, no sound, an app that does not respond, and similar conditions.
 
-This app writes each report to the current directory, as `pokketstation_report_<timestamp>.log`. One example is `pokketstation_report_20260721_143012.log`. Each report contains:
+This app writes each report to the current directory, as `pokket_report_<timestamp>.log`. One example is `pokket_report_20260721_143012.log`. Each report contains:
 - The reason for the report (a fault, or a manual F12 press), and the frame number.
 - The paths of the BIOS file and the app or card file.
 - The total number of executed instructions, the held button state, `CLK_MODE`, and the flash bank-select state (`F_BANK_FLG` and `F_BANK_VAL`).
@@ -167,4 +167,4 @@ This app writes each report to the current directory, as `pokketstation_report_<
 - If a fault occurred: the exact unrecognized opcode, and its fetch address.
 - The last 8192 executed program counters or less, oldest first, each with an ARM or Thumb label.
 
-**When you file a bug report, attach the applicable `pokketstation_report_*.log` file.** Include a description of your actions immediately before the condition. That trace is usually the difference between a fault that a developer can correct and a fault that a developer cannot correct.
+**When you file a bug report, attach the applicable `pokket_report_*.log` file.** Include a description of your actions immediately before the condition. That trace is usually the difference between a fault that a developer can correct and a fault that a developer cannot correct.

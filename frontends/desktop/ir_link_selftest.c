@@ -33,7 +33,7 @@
    It writes an edge to the IR TX registers of one psemu_t instance.
    It then confirms that the pipe relays the edge, and that the edge asserts INT_IRDA on a separate
    psemu_t instance.
-   Two real pokketstation.exe instances use that same path, but with two processes.
+   Two real pokket.exe instances use that same path, but with two processes.
 
    With arguments, this tool instead does a full message transfer on that same real pipe:
 

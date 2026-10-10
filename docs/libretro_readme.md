@@ -12,17 +12,17 @@ yourself, see [Building](#building) below.
 
 ## Usage
 
-1. Copy `pokketstation_libretro.dll` (`.so` on Linux, `.dylib` on macOS) into the **cores** directory of RetroArch.
+1. Copy `pokket_libretro.dll` (`.so` on Linux, `.dylib` on macOS) into the **cores** directory of RetroArch.
 2. Copy your BIOS dump into the **System** directory of RetroArch (Settings → Directory → System/BIOS Directory). **Give the file the exact name `pocketstation.bin`.**
 
-   > **The BIOS file name is `pocketstation.bin`, with a `c`. It is not `pokketstation.bin`.**
-   > `pocketstation` is the name of the Sony hardware. `pokketstation`, with two `k`
-   > letters, is the name of this emulator, and it is the name of the core file in step 1.
+   > **The BIOS file name is `pocketstation.bin`, with a `c`. It is not `pokket.bin`.**
+   > `pocketstation` is the name of the Sony hardware. `pokket` is the name of this
+   > emulator, and it is the name of the core file in step 1.
    > This core opens `pocketstation.bin` only. With a file of any other name, the content
    > does not load, and RetroArch shows only its usual failure message. Examine the file
    > name first, if the content does not load.
 
-3. In RetroArch, select **Load Core** → **pokketstation** → **Load Content** → your app file.
+3. In RetroArch, select **Load Core** → **Sony - PocketStation (Pokket)** → **Load Content** → your app file.
 
 This core loads the same four content types as the desktop app, and it selects the type the same way: from the content, and not from the file extension.
 - A full memory-card image (`.mcd`), if the size of the file is exactly the real flash size.

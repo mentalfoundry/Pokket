@@ -127,7 +127,7 @@ BEGIN
     END
     POPUP "&Help"
     BEGIN
-        MENUITEM "&About pokketstation...", ID_HELP_ABOUT
+        MENUITEM "&About Pokket...", ID_HELP_ABOUT
     END
 END
 
@@ -273,12 +273,12 @@ END
    repo link and the license link below use the same mechanism. */
 IDD_ABOUT DIALOGEX 0, 0, 200, 96
 STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "About pokketstation"
+CAPTION "About Pokket"
 FONT 8, "MS Shell Dlg"
 BEGIN
     LTEXT           "", IDC_ABOUT_VERSION, 7, 7, 186, 10
     LTEXT           "An open-source Sony PocketStation emulator.", -1, 7, 20, 186, 18
-    CONTROL         "<a href=""https://github.com/mentalfoundry/pokketstation"">https://github.com/mentalfoundry/pokketstation</a>",
+    CONTROL         "<a href=""https://github.com/mentalfoundry/Pokket"">https://github.com/mentalfoundry/Pokket</a>",
                     IDC_ABOUT_LINK, "SysLink", WS_TABSTOP, 7, 42, 186, 12
     CONTROL         "Licensed under the <a href=""https://www.gnu.org/licenses/gpl-3.0.html"">GNU GPLv3</a> (see LICENSE).",
                     IDC_ABOUT_LICENSE_LINK, "SysLink", WS_TABSTOP, 7, 58, 186, 12
