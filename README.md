@@ -4,7 +4,9 @@
 
 This is an open-source Sony PocketStation emulator core, written in portable C. It is made for use in a [libretro](https://www.libretro.com/) core, a standalone Windows desktop app and JavaScript for the browser. 
 
-**Try it out here with your own retail bios dump:** the emulator runs at [daznet.neocities.org/pocketstation](https://daznet.neocities.org/pocketstation). Leave a message and say hi!
+**Try it out here with your own retail bios dump:** the emulator runs at [daznet.neocities.org/pocketstation](https://daznet.neocities.org/pocketstation). 
+
+The initial release [PokketSX](https://github.com/mentalfoundry/PokketSX) is ready for testing. It is a PS1 emulator fork that incorporates this core for PocketStation support. By using the Pokket and PokketSX emulators in tandem, you should now be able to enjoy a modern PocketStation experience.
 
 ## Status
 
