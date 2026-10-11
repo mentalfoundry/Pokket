@@ -9,7 +9,7 @@ page. The page is part of the site that uses the build.
 Install Emscripten, and put `emcc` on the PATH. Then:
 
 ```
-sh frontends/web/build.sh path/to/pokketstation-core.js
+sh frontends/web/build.sh path/to/pokket-core.js
 ```
 
 The script compiles the core from git HEAD. It does not compile the working tree.
@@ -19,7 +19,7 @@ The script compiles the core from git HEAD. It does not compile the working tree
 - One file. The WebAssembly module is inside the file, in base64. A host that does not accept a
   `.wasm` file can thus serve it.
 - No threads and no file system. The page runs the machine in its animation loop.
-- `createPokketstationCore()` returns a promise for the module. The module gives each exported
+- `createPokketCore()` returns a promise for the module. The module gives each exported
   `psemu_*` function with a leading underscore, and `HEAPU8` and `HEAP16` for data transfer.
 
 ## Operation of a page

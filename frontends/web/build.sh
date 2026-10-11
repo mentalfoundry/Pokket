@@ -20,7 +20,7 @@ set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
-out=${1:-"$here/pokketstation-core.js"}
+out=${1:-"$here/pokket-core.js"}
 
 src=$(mktemp -d)
 trap 'rm -rf "$src"' EXIT
@@ -30,7 +30,7 @@ emcc -O3 -std=c99 -DNDEBUG \
     -I"$src/core/include" -I"$src/core/src" \
     "$src"/core/src/*.c \
     -sMODULARIZE=1 \
-    -sEXPORT_NAME=createPokketstationCore \
+    -sEXPORT_NAME=createPokketCore \
     -sSINGLE_FILE=1 \
     -sSINGLE_FILE_BINARY_ENCODE=0 \
     -sENVIRONMENT=web \
