@@ -31,13 +31,10 @@
 
 #define SCALE 8
 
-/* Help > About shows this value.
-   Change this value manually for each release, to agree with the latest git tag.
-   This project does not connect this value to git or to CMake automatically.
-   This string is the only location to change for a new release.
-   A build from a source archive has no git. Thus an automatic value can become incorrect, and give
-   no error. */
-#define POKKETSTATION_VERSION "v1.20"
+/* Help > About shows POKKET_VERSION. The project() line of the root CMakeLists.txt gives it. */
+#ifndef POKKET_VERSION
+#error "POKKET_VERSION is not defined. Build this frontend with CMake."
+#endif
 
 /* Returns the directory of the running executable.
    This function gets the directory from argv[0]. It does not use an operating-system interface for
@@ -2018,7 +2015,7 @@ static void prompt_remap_controls(menu_context_t *ctx) {
 static INT_PTR CALLBACK about_dialog_proc(HWND hdlg, UINT msg, WPARAM wparam, LPARAM lparam) {
     switch (msg) {
     case WM_INITDIALOG:
-        SetDlgItemTextA(hdlg, IDC_ABOUT_VERSION, "Pokket " POKKETSTATION_VERSION);
+        SetDlgItemTextA(hdlg, IDC_ABOUT_VERSION, "Pokket " POKKET_VERSION);
         return TRUE;
     case WM_NOTIFY: {
         NMHDR *nmhdr = (NMHDR *)lparam;

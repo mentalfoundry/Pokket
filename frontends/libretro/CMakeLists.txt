@@ -10,6 +10,7 @@ FetchContent_MakeAvailable(libretro-common)
 add_library(pokket_libretro MODULE libretro.c)
 target_include_directories(pokket_libretro PRIVATE ${libretro-common_SOURCE_DIR}/include)
 target_link_libraries(pokket_libretro PRIVATE psemu)
+target_compile_definitions(pokket_libretro PRIVATE POKKET_VERSION="${POKKET_VERSION_STRING}")
 set_target_properties(pokket_libretro PROPERTIES
     PREFIX ""
     OUTPUT_NAME "pokket_libretro"

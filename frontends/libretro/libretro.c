@@ -4,6 +4,11 @@
 #include "libretro.h"
 #include "psemu/psemu.h"
 
+/* The project() line of the root CMakeLists.txt gives POKKET_VERSION. */
+#ifndef POKKET_VERSION
+#error "POKKET_VERSION is not defined. Build this core with CMake."
+#endif
+
 static psemu_t *g_ps = NULL;
 static uint32_t g_framebuffer[PSEMU_LCD_WIDTH * PSEMU_LCD_HEIGHT];
 
@@ -49,7 +54,7 @@ unsigned retro_api_version(void) {
 void retro_get_system_info(struct retro_system_info *info) {
     memset(info, 0, sizeof(*info));
     info->library_name = "Pokket";
-    info->library_version = "0.1";
+    info->library_version = POKKET_VERSION;
     info->valid_extensions = "mcr|mcs|pss|mcd|bin|gme";
     info->need_fullpath = false;
     info->block_extract = false;

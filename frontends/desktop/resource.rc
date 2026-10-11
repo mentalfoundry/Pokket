@@ -264,8 +264,8 @@ BEGIN
     CTEXT           "", IDC_CAPTURE_PROMPT_TEXT, 8, 8, 204, 24
 END
 
-/* The version line's actual text is set at WM_INITDIALOG (POKKETSTATION_
-   VERSION lives in main.c, not here). SysLink (requires ComCtl32 v6 - see
+/* main.c sets the text of the version line at WM_INITDIALOG, from POKKET_VERSION.
+   SysLink (requires ComCtl32 v6 - see
    the /manifestdependency pragma in main.c) renders its href as a normal
    clickable, underlined-on-hover hyperlink; about_dialog_proc's WM_NOTIFY/
    NM_CLICK handler is what actually opens it via ShellExecuteA - both the

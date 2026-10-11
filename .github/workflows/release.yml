@@ -33,6 +33,18 @@ jobs:
           # describe` to see previous tags and the commits since then.
           fetch-depth: 0
 
+      # Both frontends show the version from the project() line of CMakeLists.txt. The
+      # version input must agree with it.
+      - name: Check version
+        shell: pwsh
+        run: |
+          $m = Select-String -Path CMakeLists.txt -Pattern 'project\(pokket VERSION (\S+)'
+          if (-not $m) { throw "CMakeLists.txt has no project() version." }
+          $cmake = "v" + $m.Matches[0].Groups[1].Value
+          if ("${{ inputs.version }}" -ne $cmake) {
+            throw "The version input ${{ inputs.version }} does not agree with $cmake in CMakeLists.txt."
+          }
+
       # Self-contained vcpkg bootstrap, same reasoning as the artifact-only
       # workflow: the runner image's preinstalled vcpkg lives at a path that
       # varies between image versions, so don't depend on it.

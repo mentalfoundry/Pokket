@@ -23,6 +23,7 @@ enable_language(RC)
 # via SDL2::SDL2main's WinMain shim; pass --console to opt back into a
 # visible console for stderr diagnostics (see main.c).
 add_executable(pokket_desktop WIN32 main.c ir_link.c ir_transport.c ir_transport_pipe.c ir_transport_tcp.c content_writeback.c resource.rc)
+target_compile_definitions(pokket_desktop PRIVATE POKKET_VERSION="${POKKET_VERSION_STRING}")
 # comctl32 - the About dialog's SysLink control (Help > About's clickable
 # repo link); shell32 - ShellExecuteA, to actually open it in a browser.
 target_link_libraries(pokket_desktop PRIVATE psemu SDL2::SDL2 SDL2::SDL2main comdlg32 comctl32 shell32 ws2_32)
