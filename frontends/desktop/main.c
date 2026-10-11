@@ -37,7 +37,7 @@
    This string is the only location to change for a new release.
    A build from a source archive has no git. Thus an automatic value can become incorrect, and give
    no error. */
-#define POKKETSTATION_VERSION "v1.14"
+#define POKKETSTATION_VERSION "v1.20"
 
 /* Returns the directory of the running executable.
    This function gets the directory from argv[0]. It does not use an operating-system interface for
@@ -179,7 +179,7 @@ typedef struct {
    The report contains data from the frontend: the reason string and the frame number.
    The report also contains the full CPU dump and trace dump from psemu_write_crash_report.
    Two conditions cause this function: an automatic call at a detected CPU fault, and a call from a
-   hotkey. That hotkey is F12 by default, and Tools > Remap Controls... can change it.
+   hotkey. That hotkey is F12 by default, and Options > Remap Controls... can change it.
    Not each condition that needs a report causes psemu_cpu_faulted() to return a nonzero value. "The
    app looks incorrect" and "there is no sound" are also real conditions.
    An earlier crash investigation (see docs/hardware-notes.md) needed this exact kind of state dump,
@@ -247,7 +247,7 @@ static void write_diagnostic_report(
 
    This app writes settings.cfg immediately when a value changes: when a BIOS loads
    from a command-line argument or from File > Open, and when a user changes the
-   hardware ID with Tools > Edit Hardware ID. This app does not collect the changes
+   hardware ID with Options > Edit Hardware ID. This app does not collect the changes
    for one write at exit. With one write at exit, a forced stop or a crash during a
    session loses each change from that session, and gives no error. */
 #define SETTINGS_CONFIG_NAME "settings.cfg"
@@ -291,7 +291,7 @@ typedef struct {
     char key_reset[32];
     char key_quick_save[32];
     char key_quick_load[32];
-    /* Tools > Date/Time Override.
+    /* Options > Date/Time Override.
        This value holds a BIOS setting that is in emulated RAM, and not in a
        hardware register (see docs/hardware-notes.md). DATETIME_OVERRIDE_OFF
        means "make no change", thus the system menus of the PocketStation operate
@@ -299,7 +299,7 @@ typedef struct {
        frame. That repetition keeps the value against the BIOS menu, which writes
        its own value. */
     int datetime_override;
-    /* Tools > Sound > Volume. The range is 0 to 100, in percent. This is the
+    /* Options > Sound > Volume. The range is 0 to 100, in percent. This is the
        output level of the emulator, and the emulated machine cannot read it. It
        scales the PCM data on the path to the audio device, after the core applies
        the volume setting of the PocketStation. Thus the two values multiply.
@@ -310,7 +310,7 @@ typedef struct {
        This app ignores a volume_override= line in an older settings.cfg file, and
        removes the line at the next save. */
     int master_volume;
-    /* Tools > Sound > Speaker. One of the SPEAKER_SIM_* values below. Like
+    /* Options > Sound > Speaker. One of the SPEAKER_SIM_* values below. Like
        master_volume, this is only an output effect, and the emulated machine
        cannot read it. This app applies it before master_volume. Thus the
        percentage stays a simple loudness control above it. */
@@ -320,7 +320,7 @@ typedef struct {
 #define DATETIME_OVERRIDE_OFF 0
 #define DATETIME_OVERRIDE_OS 1
 
-/* Tools > Sound > Volume. The menu gives steps of 10%, but this app stores the setting as a
+/* Options > Sound > Volume. The menu gives steps of 10%, but this app stores the setting as a
    percentage. Thus a control with a finer resolution later, for example a slider or a
    hotkey, needs no new format on disk. Such a control gives only a value that the menu
    cannot produce, and sound_menu_id below rounds that value to the nearest step that the
@@ -377,7 +377,7 @@ static void apply_master_volume(int16_t *samples, uint32_t count, int percent) {
     }
 }
 
-/* Tools > Sound > Speaker.
+/* Options > Sound > Speaker.
 
    The core gives the frontend exactly the data that the DAC held, sample for
    sample (see dac.c). That data is the signal at the *terminals* of the
@@ -405,7 +405,7 @@ static void apply_master_volume(int16_t *samples, uint32_t count, int percent) {
    Each preset is approximately 4dB quieter than the raw signal. This is not a
    tuning error to correct: the low frequencies that the filter removes are real
    energy, and a speaker that cannot produce them is quieter. This is also true
-   of the device. Tools > Sound > Volume can increase the level of the result.
+   of the device. Options > Sound > Volume can increase the level of the result.
 
    A person tuned these values by ear against the sound of the hardware. Nobody
    measured them at the speaker of a real unit. These are presets, and not a free
@@ -425,7 +425,7 @@ static void apply_master_volume(int16_t *samples, uint32_t count, int percent) {
 #define SPEAKER_SIM_DEFAULT SPEAKER_SIM_POCKETSTATION
 
 /* The index of this table is a SPEAKER_SIM_* value. `name` is the token in
-   settings.cfg. The order here is also the order of the Tools > Sound > Speaker
+   settings.cfg. The order here is also the order of the Options > Sound > Speaker
    menu (see the ID_TOOLS_SPEAKER_BASE range in resource.h). The OFF row has no
    coefficients: no code reads them. That row keeps the same index values for
    this table as for each other table.
@@ -617,7 +617,7 @@ static void apply_speaker_filter(speaker_filter_t *f, int16_t *samples, uint32_t
    separate color.
    This value is exactly the value that theme_shadow_for returns for the Classic
    scheme. Thus a new settings.cfg file and a manual selection of
-   View > Colors > Classic agree byte for byte. The earlier value was 8E9B8E,
+   Options > Colors > Classic agree byte for byte. The earlier value was 8E9B8E,
    which a person selected manually and independently of the rule. That value is
    within one rounding step of this value. The two are the same color on the
    screen, but they leave two different values on disk. */
@@ -662,7 +662,7 @@ static int load_settings(app_settings_t *settings, const char *path) {
        before this override existed. */
     settings->datetime_override = DATETIME_OVERRIDE_OFF;
     /* Full volume. Thus an installation where nobody changed
-       Tools > Sound > Volume sounds the same way as before this setting
+       Options > Sound > Volume sounds the same way as before this setting
        existed. */
     settings->master_volume = MASTER_VOLUME_DEFAULT;
     /* master_volume has a default that makes no change, but this default does
@@ -856,7 +856,7 @@ typedef struct {
     const char *display_name;
 } button_binding_t;
 
-/* The number of rows in Tools > Remap Controls: Up, Down, Left, Right, and Fire,
+/* The number of rows in Options > Remap Controls: Up, Down, Left, Right, and Fire,
    and then 4 hotkeys that are not buttons: Create Debug Log, Reset, Save State,
    and Load State.
    This value agrees with the row count of IDD_REMAP_CONTROLS.
@@ -1291,7 +1291,7 @@ static void resize_client_to_scale(HWND hwnd, int multiplier) {
 }
 
 /* --- The calculation of a full scheme from one selected color -------------
-   View > Colors > Advanced Colors... asks for one color, the screen color
+   Options > Colors > Advanced Colors... asks for one color, the screen color
    (the background). It calculates the other two colors from that color.
    The background is the reference color, and not the active pixel color,
    because most of the LCD is unlit for most of the time. The background *is*
@@ -2235,7 +2235,7 @@ static void sync_menu_state(menu_context_t *ctx) {
             datetime_ids[ctx->settings->datetime_override], MF_BYCOMMAND);
     }
 
-    /* Tools > Sound > Volume is the output level of this app. Thus this code
+    /* Options > Sound > Volume is the output level of this app. Thus this code
        never disables it, and it operates with no BIOS. A stored percentage that
        is not a step of 10% rounds to the nearest item that the menu can show.
        Only a manual edit of settings.cfg can give such a value. This code does
@@ -2247,7 +2247,7 @@ static void sync_menu_state(menu_context_t *ctx) {
             volume_menu, ID_TOOLS_SOUND_BASE, ID_TOOLS_SOUND_LAST, ID_TOOLS_SOUND_BASE + step, MF_BYCOMMAND);
     }
 
-    /* Tools > Sound > Speaker is next to Volume, and it is not inside Volume.
+    /* Options > Sound > Speaker is next to Volume, and it is not inside Volume.
        Thus it needs its own search: find_menu_containing returns the popup menu
        that holds the group directly, and these are two different popup menus.
        This code never disables this group, for the same reason as Volume: it is
@@ -2288,7 +2288,7 @@ static void SDLCALL handle_windows_message(void *userdata, void *hwnd, unsigned 
     if (message != WM_COMMAND) {
         return;
     }
-    /* Tools > Sound > Volume uses one contiguous ID range. It does not use a
+    /* Options > Sound > Volume uses one contiguous ID range. It does not use a
        separate named ID for each step (see resource.h). Thus this code tests it
        here, and not as eleven cases in the selection below. The main loop reads
        settings->master_volume at each frame, thus a store of the value applies
@@ -2299,7 +2299,7 @@ static void SDLCALL handle_windows_message(void *userdata, void *hwnd, unsigned 
         sync_menu_state(ctx);
         return;
     }
-    /* Tools > Sound > Speaker uses the same method, for the same reason.
+    /* Options > Sound > Speaker uses the same method, for the same reason.
        A store of the value also applies it: the main loop reads
        settings->speaker_sim at each frame, and the filter calculates its
        coefficients again at a change of the value (see apply_speaker_filter). */
@@ -2424,7 +2424,7 @@ static void render_framebuffer(const psemu_t *ps, uint32_t *pixels, uint32_t pix
        not a drop shadow.
        This code draws shadow_rgba one row below each lit pixel. That color agrees
        with the active color scheme, and a user can set it manually from
-       View > Colors > Advanced Colors....
+       Options > Colors > Advanced Colors....
        This code is a second pass. Thus it never writes over a lit pixel.
        This code tests `fb` directly. It does not test the output that it just
        wrote. Two adjacent lit source pixels must never make each other darker. */
@@ -2657,8 +2657,8 @@ int main(int argc, char **argv) {
        The 32x32 framebuffer fills the full render target at each frame, for each
        target size. The NULL dstrect argument of render_copy below does this.
        Thus a change to any size operates with no extra code.
-       View > Native Size and View > Double Size are only a method to return to a
-       known size. They are not the only sizes that this app supports. */
+       Native Size and Double Size in Options > Window Size are only a method to return
+       to a known size. They are not the only sizes that this app supports. */
     SDL_Window *window = SDL_CreateWindow("Pokket", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         PSEMU_LCD_WIDTH * SCALE, PSEMU_LCD_HEIGHT * SCALE, SDL_WINDOW_RESIZABLE);
     SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
@@ -2741,7 +2741,7 @@ int main(int argc, char **argv) {
        Quick Save State, and Quick Load State.
        This order agrees with IDC_REMAP_LABEL_BASE, IDC_REMAP_CHANGE_BASE, and
        save_key_bindings.
-       This array is not const and not static: Tools > Remap Controls... changes
+       This array is not const and not static: Options > Remap Controls... changes
        the entries through menu_ctx.button_scancodes, which points to this same
        array.
        The last 4 entries (Create Debug Log, Reset, Save State, and Load State)
@@ -2861,23 +2861,23 @@ int main(int argc, char **argv) {
                    Press this key immediately when a condition looks incorrect. A frozen
                    screen, no sound, and incorrect graphics are examples. Press the key
                    for each such condition, and not only for a CPU fault.
-                   Tools > Remap Controls... can change this key. The default is F12.
+                   Options > Remap Controls... can change this key. The default is F12.
                    See button_scancodes above. */
                 char reason[64];
                 snprintf(reason, sizeof(reason), "manual (%s)", SDL_GetScancodeName(button_scancodes[5].scancode));
                 write_diagnostic_report(ps, reason, frame, bios_path, app_path);
             } else if (event.type == SDL_KEYDOWN && event.key.keysym.scancode == button_scancodes[6].scancode) {
-                /* Remappable via Tools > Remap Controls..., default F8. See button_scancodes above. */
+                /* Remappable via Options > Remap Controls..., default F8. See button_scancodes above. */
                 reset_emulation(&menu_ctx);
             } else if (event.type == SDL_KEYDOWN && event.key.keysym.scancode == button_scancodes[7].scancode) {
-                /* Tools > Remap Controls... can change this key. The default is F5.
+                /* Options > Remap Controls... can change this key. The default is F5.
                    See button_scancodes above.
                    This key uses slot 0, the quick slot. Only that slot has a key
                    binding. Thus an incorrect key press cannot write over slot 1 or
                    slot 2. */
                 save_state_to_slot(&menu_ctx, 0);
             } else if (event.type == SDL_KEYDOWN && event.key.keysym.scancode == button_scancodes[8].scancode) {
-                /* Remappable via Tools > Remap Controls..., default F9. See button_scancodes above. */
+                /* Remappable via Options > Remap Controls..., default F9. See button_scancodes above. */
                 load_state_from_slot(&menu_ctx, 0);
             }
         }
@@ -2939,7 +2939,7 @@ int main(int argc, char **argv) {
            message.
            Before this correction, such a continuation looked to a user like an
            unexplained stop or crash, with no diagnostic data. */
-        /* Tools > Date/Time Override.
+        /* Options > Date/Time Override.
            This setting is in emulated RAM, and the system menus of the BIOS also
            write to that RAM. Thus, to hold a value, this app must write the value
            again. One write is not sufficient. A write at each frame here also
@@ -3004,7 +3004,7 @@ int main(int argc, char **argv) {
         if (audio_dev != 0) {
             uint32_t n = psemu_get_audio_samples(ps, audio_buf, sizeof(audio_buf) / sizeof(audio_buf[0]));
             if (n > 0) {
-                /* Tools > Sound > Volume. This code reads the value at each frame,
+                /* Options > Sound > Volume. This code reads the value at each frame,
                    thus a change takes effect at the next frame. This code always
                    drains the core, and it queues silence at 0%. If it did not queue
                    the silence, the data in the buffer would continue to play, and the

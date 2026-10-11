@@ -539,7 +539,7 @@ static int run_menu(psemu_t *ps, const char *sav_path, int presses) {
 
 /* Phase 5 ("boot" mode): does a frontend-applied volume survive the boot?
    The desktop frontend writes 0x290 before every frame it emulates (see
-   the Tools > Volume Override block in frontends/desktop/main.c), which
+   the Options > Volume Override block in frontends/desktop/main.c), which
    should mean the value is in place well before sound init reads it at
    ~instr #14548. The reported symptom is that the boot chime plays at
    full volume anyway.

@@ -39,7 +39,22 @@ BEGIN
         MENUITEM SEPARATOR
         MENUITEM "E&xit",               ID_FILE_EXIT
     END
-    POPUP "&Tools"
+    POPUP "&IR Link"
+    BEGIN
+        /* The first pair is the local link, between two windows on this machine.
+           It uses one fixed pipe name, thus it needs no dialog and takes no
+           ellipsis. The second pair is the network link, which must ask for a
+           port or for the address of a peer. Disconnect ends a link of either
+           kind. */
+        MENUITEM "&Host Local Session", ID_IR_HOST
+        MENUITEM "&Connect Local Session", ID_IR_CONNECT
+        MENUITEM SEPARATOR
+        MENUITEM "Host Over &Network...", ID_IR_HOST_NET
+        MENUITEM "Connect Over Net&work...", ID_IR_CONNECT_NET
+        MENUITEM SEPARATOR
+        MENUITEM "&Disconnect", ID_IR_DISCONNECT
+    END
+    POPUP "&Options"
     BEGIN
         MENUITEM "Edit &Hardware ID...", ID_TOOLS_EDIT_HWID
         MENUITEM "&Remap Controls...", ID_TOOLS_REMAP_CONTROLS
@@ -84,45 +99,29 @@ BEGIN
                 MENUITEM "&Tinny",                       ID_TOOLS_SPEAKER_BASE + 3
             END
         END
-        MENUITEM SEPARATOR
-        POPUP "Date/&Time Override"
-        BEGIN
-            MENUITEM "&Default (set in system menu)", ID_TOOLS_DATETIME_DEFAULT
-            MENUITEM SEPARATOR
-            MENUITEM "&OS Date/Time", ID_TOOLS_DATETIME_OS
-        END
-    END
-    POPUP "&IR Link"
-    BEGIN
-        /* The first pair is the local link, between two windows on this machine.
-           It uses one fixed pipe name, thus it needs no dialog and takes no
-           ellipsis. The second pair is the network link, which must ask for a
-           port or for the address of a peer. Disconnect ends a link of either
-           kind. */
-        MENUITEM "&Host Local Session", ID_IR_HOST
-        MENUITEM "&Connect Local Session", ID_IR_CONNECT
-        MENUITEM SEPARATOR
-        MENUITEM "Host Over &Network...", ID_IR_HOST_NET
-        MENUITEM "Connect Over Net&work...", ID_IR_CONNECT_NET
-        MENUITEM SEPARATOR
-        MENUITEM "&Disconnect", ID_IR_DISCONNECT
-    END
-    POPUP "&View"
-    BEGIN
-        MENUITEM "&Native Size (1x)", ID_VIEW_NATIVE_SIZE
-        MENUITEM "&Double Size (2x)", ID_VIEW_DOUBLE_SIZE
-        MENUITEM SEPARATOR
         POPUP "&Colors"
         BEGIN
             MENUITEM "&Classic (LCD-style)", ID_COLORS_CLASSIC
             MENUITEM "&Light (black on white)", ID_COLORS_STANDARD
             MENUITEM "&Dark (white on black)", ID_COLORS_REVERSED
             MENUITEM SEPARATOR
-            /* Everything the three presets do not cover lives behind this one
-               item, sprite shadows included - they are part of how the LCD
-               looks, not a separate feature, and their color has to be picked
-               against the scheme it sits on anyway. */
+            /* This item holds each color setting that the three presets do not
+               hold, and the sprite shadows also. A sprite shadow is part of the
+               appearance of the LCD, and the user selects its color against the
+               color scheme behind it. */
             MENUITEM "&Advanced Colors...", ID_COLORS_ADVANCED
+        END
+        POPUP "&Window Size"
+        BEGIN
+            MENUITEM "&Native Size (1x)", ID_VIEW_NATIVE_SIZE
+            MENUITEM "&Double Size (2x)", ID_VIEW_DOUBLE_SIZE
+        END
+        MENUITEM SEPARATOR
+        POPUP "Date/&Time Override"
+        BEGIN
+            MENUITEM "&Default (set in system menu)", ID_TOOLS_DATETIME_DEFAULT
+            MENUITEM SEPARATOR
+            MENUITEM "&OS Date/Time", ID_TOOLS_DATETIME_OS
         END
     END
     POPUP "&Help"
