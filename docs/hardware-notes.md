@@ -6,7 +6,8 @@ The facts here come from three sources, in this order of trust:
 
 1. A direct test on real hardware.
 2. A trace of real BIOS execution and real app execution, with `tools/inspect.c`, against real dumps. This repository does not contain those dumps. See `testdata/`, which .gitignore excludes.
-3. The available register documentation.
+3. The available register documentation: [psx-spx](https://psx-spx.consoledev.net/), which
+   started as the documentation of Martin Korth.
 
 Some facts are inferences, and some are unconfirmed. The section "Known open questions and unconfirmed behavior" at the end lists each one. Do not use an item in that section as a confirmed fact.
 

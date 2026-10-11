@@ -31,7 +31,7 @@ Download the latest [release](https://github.com/mentalfoundry/Pokket/releases) 
 The release packages hold the desktop app and the libretro core for Windows, Linux, and
 macOS. For Android and the other systems that libretro supports, get the core from the
 [pipelines of the libretro
-repository](https://git.libretro.com/libretro/pokketstation/-/pipelines). See [Prebuilt
+repository](https://git.libretro.com/libretro/Pokket/-/pipelines). See [Prebuilt
 cores](docs/libretro_readme.md#prebuilt-cores) for the steps.
 
 ### How to reach a single loaded app
@@ -76,6 +76,13 @@ The [build guide of the desktop frontend](docs/desktop_readme.md#building) gives
 This repository uses AI assistance in the development of its code. The AI is always human steered using my best judgement and the application of my software development experiences and background. Where public documentation is missing or ambiguous, I will try to derive hardware behavior based on test bench data obtained from personal testing a real PocketStation device. I think the results and behavior of the resulting emulator speaks for itself.
 
 I'll endeavour not to serve you spaghetti. Hope you enjoy the sauce.
+
+## Acknowledgements
+
+This emulator uses the hardware documentation of Martin Korth,
+[psx-spx](https://problemkaputt.de/psx-spx.htm), for the PS1 and the PocketStation. The
+[psx-spx project](https://psx-spx.consoledev.net/) keeps that documentation and corrects it.
+Thank you to Martin Korth and to each contributor of psx-spx.
 
 ## License
 
