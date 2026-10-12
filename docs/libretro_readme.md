@@ -54,6 +54,35 @@ The hardware ID of the PocketStation is `F_SN`. It sets the rank in the companio
 
 A single-app load (`.pss` or `.mcs`) boots through the real BIOS menu, the same way as a full memory card. See [How to reach a single loaded app](../README.md#how-to-reach-a-single-loaded-app) in the main README for the button sequence.
 
+## IR link
+
+This core can operate two PocketStation units together, the same as two real units that a user holds together for an IR exchange. Both units operate in this one core. Thus you do not need a second RetroArch window or a network connection.
+
+To start an IR link in RetroArch, load the core first: **Load Core** → **Sony - PocketStation (Pokket)**. Then open the list of subsystems in the Main Menu. That list has one item for the IR link, and you select it three times. The text below the item gives the next step:
+
+1. **Load IR Link (2 PocketStations)**, with "Step 1 of 3: select the card for unit A" below it. Select the card for unit A.
+2. **Load IR Link (2 PocketStations) ★**, with "Step 2 of 3: select the card for unit B" below it. Select the card for unit B.
+3. **Start IR Link (2 PocketStations) ★**, with the names of the two cards below it. Select it to start.
+
+When the link starts, a message shows the position of each unit and the controls.
+
+**RetroArch keeps the link in History.** After the first start, select the entry in **History** to start the same two cards again in one step.
+
+From a command line: `retroarch -L pokket_libretro.dll --subsystem ir_link unitA.mcd unitB.mcd`
+
+**Give the two cards different file names.** RetroArch makes the name of each save file from the name of the content file, without the directory and without the extension. Two cards with the same name thus get one save file, and the save of one unit replaces the save of the other unit. This core refuses that load, and it shows a message.
+
+**Each card keeps its usual save file.** In link mode, the save file of each card is the same `.srm` file as in a usual load of that card. Thus the result of a trade is in the card at the next usual load. Each `.srm` file is a `.mcd` file, byte for byte, the same as in a usual load (see [Saves](#saves)).
+
+**Controls.** Controller 1 operates unit A, and controller 2 operates unit B. One user can operate both units with one controller: on controller 1, **L** selects unit A, and **R** selects unit B. A message shows the selected unit.
+
+**Core options.** These options have an effect in link mode only:
+- **IR link: screen layout**: the two screens side by side, or one above the other.
+- **IR link: audio**: the sound of both units, of unit A only, of unit B only, or of unit A on the left channel and unit B on the right channel.
+- **IR link: hardware ID of unit B**: two real units have different hardware IDs, thus unit B gets a different ID by default. Unit B gets the ID of unit A with the first two digits increased by 1, for example `420000D3` for the default `410000D3`. The companion app that reads the hardware ID ignores those two digits, thus unit B keeps the rank of unit A in that app. This option has an effect at the next load of the link.
+
+Save states, rewind, run-ahead, and fast-forward operate in link mode. A save state holds both units, and each IR signal that is in transit between them.
+
 ## Building
 
 Follow the general build steps in the [build guide of the desktop frontend](desktop_readme.md#building). The core, the tools, the tests, and this libretro core all build together, the same way. This core needs no SDL2 step and no desktop-specific step. It gets `libretro-common` at configure time, with the `FetchContent` function of CMake. The first configure operation needs internet access for that step.

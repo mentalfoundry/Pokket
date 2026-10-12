@@ -581,9 +581,10 @@ static psemu_t *make_instance(const uint8_t *bios, size_t bios_size, const uint8
    Relaying with no playout delay hands the receiver a batch of edges whose timestamps are already in its
    past, so it releases the whole batch at once and every interval it measures collapses. Measured at
    frontend frame granularity: with no delay the transfer fails outright, and with one frame of delay it
-   completes in both directions. The delay defaults to the desktop frontend's own IR_LINK_PLAYOUT_DELAY_US
-   so this probe models the real transport rather than a strictly worse one; IR_PROBE_PLAYOUT_DELAY overrides
-   it for experiments. */
+   completes in both directions. The delay is 100000us by default, and IR_PROBE_PLAYOUT_DELAY changes it for
+   experiments. This value is less than IR_LINK_PLAYOUT_DELAY_US of the desktop frontend (250000us), because
+   that value must also absorb the clock drift between two processes, and two instances in one process
+   have no such drift. */
 /* `to_minus_from` converts a timestamp on `from`'s IR timeline onto `to`'s. It is zero when both instances
    start from the same save state, which is the single-screen case and what this tool did for its whole life
    before two-state runs existed.
@@ -682,8 +683,8 @@ int main(int argc, char **argv) {
     int a_first_len = 0, b_first_len = 0;
     long a_first_frame = -1, b_first_frame = -1;
 
-    /* The desktop frontend's IR_LINK_PLAYOUT_DELAY_US (100000us) expressed in the reference-rate cycle units
-       these timestamps use, so the default models the real transport. */
+    /* The default playout delay of 100000us, in the reference-rate cycle units of these timestamps. See
+       relay_edges. */
     uint64_t playout_delay = (100000ull * PSEMU_ASSUMED_CPU_HZ) / 1000000ull;
     const char *script_a = "up@20-30";
     const char *script_b = "down@20-30";

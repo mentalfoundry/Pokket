@@ -26,3 +26,20 @@ set_target_properties(pokket_libretro PROPERTIES
 if(APPLE)
     set_target_properties(pokket_libretro PROPERTIES SUFFIX ".dylib")
 endif()
+
+# The IR link subsystem. This test includes libretro.c directly, thus it can examine the static state
+# of the core. It needs a BIOS dump with the name pocketstation.bin in testdata/, and it skips itself
+# with exit code 77 when it finds no dump.
+if(PSEMU_BUILD_TESTS)
+    add_executable(libretro_link_test libretro_link_test.c)
+    target_include_directories(libretro_link_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${libretro-common_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/core/src)
+    target_compile_definitions(libretro_link_test PRIVATE
+        POKKET_VERSION="${POKKET_VERSION_STRING}"
+        PSEMU_TESTDATA_DIR="${CMAKE_SOURCE_DIR}/testdata")
+    target_link_libraries(libretro_link_test PRIVATE psemu)
+    add_test(NAME libretro_link_test COMMAND libretro_link_test)
+    set_tests_properties(libretro_link_test PROPERTIES SKIP_RETURN_CODE 77)
+endif()
