@@ -392,23 +392,23 @@ static void exec_halfword_transfer(arm7tdmi_t *cpu, uint32_t instr, uint32_t pc)
         uint32_t value;
         switch (sh) {
         case 1: { /* LDRH */
-            /* A confirmed hardware quirk of the real ARM7TDMI. Other work
-               on the same core records this quirk, and a test against a
-               real app confirms it here. See docs/hardware-notes.md,
-               "CPU".
+            /* A confirmed hardware quirk of the real ARM7TDMI. See
+               docs/hardware-notes.md, "CPU".
                A misaligned halfword read (with address bit 0 set) does
-               not round down to the halfword below. Real silicon rotates
-               the loaded halfword right by 8 bits. Thus it exchanges the
-               two bytes before the value gets to the register.
+               not round down to the halfword below. Real silicon reads the
+               aligned halfword, and then rotates the 32-bit value right by
+               8 bits. Thus the byte at the odd address is in bits 0 to 7,
+               and the byte below it is in bits 24 to 31. Screen 17 of
+               pk_timing_bench gives 0x11000022 on real hardware for the
+               halfword 0x2211.
                The font-glyph routine of a real PocketStation homebrew app
                depends on this: an LDRH with a post-increment of 1, masked
                to the low byte, reads a byte-packed table one byte at a
                time. Without the rotation, every second byte is incorrect. */
-            uint16_t h = psemu_bus_read16(cpu->bus, address & ~1u);
+            value = psemu_bus_read16(cpu->bus, address & ~1u);
             if (address & 1u) {
-                h = (uint16_t)((h >> 8) | (h << 8));
+                value = (value >> 8) | (value << 24);
             }
-            value = h;
             break;
         }
         case 2: {

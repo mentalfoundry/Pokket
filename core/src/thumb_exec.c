@@ -10,6 +10,40 @@ static uint32_t sign_extend(uint32_t value, int bits) {
     return (value ^ mask) - mask;
 }
 
+/* A Thumb LDR uses the same load path as an ARM LDR (see exec_single_transfer in arm_exec.c).
+   A misaligned word load reads the aligned word, and then rotates it right by 8 bits for each
+   byte of misalignment. Thus the byte at the address is in the low 8 bits.
+   The menu routine of a real fighting-game app depends on this. It reads a byte table with
+   `LDR Rd,[Rb,Ro]` at each byte address, and masks the result to the low byte. Without the
+   rotation, each group of four entries gives the same byte. */
+static uint32_t read32_rotated(psemu_bus_t *bus, uint32_t addr) {
+    uint32_t value = psemu_bus_read32(bus, addr & ~3u);
+    uint32_t rot = (addr & 3u) * 8u;
+    return rot ? (value >> rot) | (value << (32u - rot)) : value;
+}
+
+/* A Thumb LDRH and LDSH use the same load path as the ARM halfword loads (see
+   exec_halfword_transfer in arm_exec.c). A misaligned LDRH reads the aligned halfword, and then
+   rotates the 32-bit value right by 8 bits. Thus the byte at the odd address is in bits 0 to 7,
+   and the byte below it is in bits 24 to 31. Screen 17 of pk_timing_bench gives the same result
+   on real hardware in the ARM state and in the Thumb state. */
+static uint32_t read16_rotated(psemu_bus_t *bus, uint32_t addr) {
+    uint32_t value = psemu_bus_read16(bus, addr & ~1u);
+    if (addr & 1u) {
+        value = (value >> 8) | (value << 24);
+    }
+    return value;
+}
+
+/* A misaligned LDSH does not get the rotation of LDRH. It operates as a sign-extended byte read
+   (LDSB) from the odd address. */
+static uint32_t read16_signed(psemu_bus_t *bus, uint32_t addr) {
+    if (addr & 1u) {
+        return (uint32_t)(int32_t)(int8_t)psemu_bus_read8(bus, addr);
+    }
+    return (uint32_t)(int32_t)(int16_t)psemu_bus_read16(bus, addr);
+}
+
 static void exec_move_shifted(arm7tdmi_t *cpu, uint16_t instr) {
     int op = (instr >> 11) & 0x3;
     uint32_t offset5 = (instr >> 6) & 0x1Fu;
@@ -254,7 +288,7 @@ static void exec_load_store_reg_offset(arm7tdmi_t *cpu, uint16_t instr) {
     uint32_t addr = cpu->r[rb] + cpu->r[ro];
 
     if (load) {
-        cpu->r[rd] = byte ? psemu_bus_read8(cpu->bus, addr) : psemu_bus_read32(cpu->bus, addr & ~3u);
+        cpu->r[rd] = byte ? psemu_bus_read8(cpu->bus, addr) : read32_rotated(cpu->bus, addr);
         arm7tdmi_add_cycles(cpu, 1u); /* LDR/LDRB: +1I */
     } else if (byte) {
         psemu_bus_write8(cpu->bus, addr, (uint8_t)cpu->r[rd]);
@@ -275,13 +309,12 @@ static void exec_load_store_sign_extended(arm7tdmi_t *cpu, uint16_t instr) {
         psemu_bus_write16(cpu->bus, addr & ~1u, (uint16_t)cpu->r[rd]);
         return;
     } else if (!s && h) { /* LDRH */
-        cpu->r[rd] = psemu_bus_read16(cpu->bus, addr & ~1u);
+        cpu->r[rd] = read16_rotated(cpu->bus, addr);
     } else if (s && !h) { /* LDSB */
         int8_t b = (int8_t)psemu_bus_read8(cpu->bus, addr);
         cpu->r[rd] = (uint32_t)(int32_t)b;
     } else { /* LDSH */
-        int16_t hw = (int16_t)psemu_bus_read16(cpu->bus, addr & ~1u);
-        cpu->r[rd] = (uint32_t)(int32_t)hw;
+        cpu->r[rd] = read16_signed(cpu->bus, addr);
     }
     arm7tdmi_add_cycles(cpu, 1u); /* LDRH/LDSB/LDSH: +1I */
 }
@@ -296,7 +329,7 @@ static void exec_load_store_imm_offset(arm7tdmi_t *cpu, uint16_t instr) {
     uint32_t addr = cpu->r[rb] + offset;
 
     if (load) {
-        cpu->r[rd] = byte ? psemu_bus_read8(cpu->bus, addr) : psemu_bus_read32(cpu->bus, addr & ~3u);
+        cpu->r[rd] = byte ? psemu_bus_read8(cpu->bus, addr) : read32_rotated(cpu->bus, addr);
         arm7tdmi_add_cycles(cpu, 1u); /* LDR/LDRB: +1I */
     } else if (byte) {
         psemu_bus_write8(cpu->bus, addr, (uint8_t)cpu->r[rd]);
@@ -313,7 +346,7 @@ static void exec_load_store_halfword_imm(arm7tdmi_t *cpu, uint16_t instr) {
     uint32_t addr = cpu->r[rb] + imm5 * 2u;
 
     if (load) {
-        cpu->r[rd] = psemu_bus_read16(cpu->bus, addr & ~1u);
+        cpu->r[rd] = read16_rotated(cpu->bus, addr);
         arm7tdmi_add_cycles(cpu, 1u); /* LDRH: +1I */
     } else {
         psemu_bus_write16(cpu->bus, addr & ~1u, (uint16_t)cpu->r[rd]);
@@ -327,7 +360,7 @@ static void exec_sp_relative(arm7tdmi_t *cpu, uint16_t instr) {
     uint32_t addr = cpu->r[13] + imm8 * 4u;
 
     if (load) {
-        cpu->r[rd] = psemu_bus_read32(cpu->bus, addr & ~3u);
+        cpu->r[rd] = read32_rotated(cpu->bus, addr);
         arm7tdmi_add_cycles(cpu, 1u); /* LDR: +1I */
     } else {
         psemu_bus_write32(cpu->bus, addr & ~3u, cpu->r[rd]);

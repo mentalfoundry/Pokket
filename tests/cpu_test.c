@@ -207,7 +207,7 @@ static void test_arm_ldrh_misaligned_quirks(void) {
        "CPU"):
        a misaligned halfword load does not round down to the aligned halfword
        below it. Real silicon rotates the loaded LDRH value right by 8 bits,
-       which exchanges its two bytes. A misaligned LDRSH instead operates as a
+       across all 32 bits of the register. A misaligned LDRSH instead operates as a
        sign-extended BYTE load (LDRSB) from that same odd address. The
        font-glyph routine of a real PocketStation homebrew ID editor found
        this behavior. That routine reads a byte-packed table with
@@ -233,14 +233,16 @@ static void test_arm_ldrh_misaligned_quirks(void) {
     assert(ps->cpu.r[1] == 0x2211u);
 
     /* LDRH R2, [R0, #1] is misaligned, at address 0x101. It rotates the
-       aligned halfword (0x2211) right by 8 bits, which gives 0x1122. Thus the
-       byte at the odd address (0x22) is in the low 8 bits. This result agrees
-       with the byte reader of the real font routine. */
+       aligned halfword (0x2211) right by 8 bits in 32 bits, which gives
+       0x11000022. Thus the byte at the odd address (0x22) is in the low 8 bits.
+       Screen 17 of pk_timing_bench gives this value on real hardware, for the
+       same bytes. The low byte agrees with the byte reader of the real font
+       routine. */
     uint32_t ldrh_odd = (0xEu << 28) | (1u << 24) | (1u << 23) | (1u << 22) | (1u << 20) | (0u << 16) | (2u << 12) |
                          (0u << 8) | (1u << 7) | (1u << 5) | (1u << 4) | 1u;
     put32(ps, 4, ldrh_odd);
     arm7tdmi_step(&ps->cpu);
-    assert(ps->cpu.r[2] == 0x1122u);
+    assert(ps->cpu.r[2] == 0x11000022u);
     assert((ps->cpu.r[2] & 0xFFu) == 0x22u);
 
     /* LDRSH R3, [R0] - aligned (address 0x100): ordinary signed halfword
@@ -587,6 +589,115 @@ static void test_thumb_bl_bx_lr_stays_thumb(void) {
 
     psemu_destroy(ps);
     printf("test_thumb_bl_bx_lr_stays_thumb OK\n");
+}
+
+static void test_thumb_ldr_misaligned_rotates(void) {
+    /* A misaligned Thumb LDR rotates the aligned word right by 8 bits for each byte of
+       misalignment, the same as an ARM LDR (see read32_rotated in thumb_exec.c). The menu routine
+       of a real fighting-game app reads a byte table with `LDR Rd,[Rb,Ro]` at each byte address,
+       and masks the result to the low byte. Without the rotation, each group of four menu entries
+       shows the same graphic. This test holds the three Thumb LDR forms that take a register base. */
+    psemu_t *ps = make_thumb_cpu();
+
+    put32(ps, 0x100, 0x0F0E0D0Cu);
+    put32(ps, 0x104, 0x25251110u);
+
+    /* LDR r0,[r1,r2] at 0x101, 0x102, 0x103: each low byte is the byte at the address. */
+    ps->cpu.r[1] = 0x100;
+    ps->cpu.r[2] = 1;
+    put16(ps, 0, (uint16_t)(0x5800u | (2u << 6) | (1u << 3) | 0u));
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[0] == 0x0C0F0E0Du);
+
+    ps->cpu.r[2] = 2;
+    put16(ps, 2, (uint16_t)(0x5800u | (2u << 6) | (1u << 3) | 0u));
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[0] == 0x0D0C0F0Eu);
+
+    ps->cpu.r[2] = 3;
+    put16(ps, 4, (uint16_t)(0x5800u | (2u << 6) | (1u << 3) | 0u));
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[0] == 0x0E0D0C0Fu);
+
+    /* An aligned address gives the word with no rotation. */
+    ps->cpu.r[2] = 4;
+    put16(ps, 6, (uint16_t)(0x5800u | (2u << 6) | (1u << 3) | 0u));
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[0] == 0x25251110u);
+
+    /* LDR r3,[r4,#4] with r4 = 0x101: the address is 0x105. */
+    ps->cpu.r[4] = 0x101;
+    put16(ps, 8, (uint16_t)(0x6800u | (1u << 6) | (4u << 3) | 3u));
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[3] == 0x10252511u);
+
+    /* LDR r5,[SP,#4] with SP = 0x102: the address is 0x106. */
+    ps->cpu.r[13] = 0x102;
+    put16(ps, 10, (uint16_t)(0x9800u | (5u << 8) | 1u));
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[5] == 0x11102525u);
+
+    psemu_destroy(ps);
+    printf("test_thumb_ldr_misaligned_rotates OK\n");
+}
+
+static void test_thumb_ldrh_misaligned_quirks(void) {
+    /* The Thumb halfword loads use the same load path as the ARM halfword loads (see
+       test_arm_ldrh_misaligned_quirks). A misaligned LDRH rotates the aligned halfword
+       right by 8 bits in 32 bits. A misaligned LDSH operates as a sign-extended byte read from the odd address. This
+       test holds the register-offset forms of both, and the immediate-offset form of LDRH. */
+    psemu_t *ps = make_thumb_cpu();
+    const uint16_t ldrh_r0 = (uint16_t)(0x5A00u | (2u << 6) | (1u << 3) | 0u); /* LDRH r0,[r1,r2] */
+    const uint16_t ldsh_r5 = (uint16_t)(0x5E00u | (2u << 6) | (1u << 3) | 5u); /* LDSH r5,[r1,r2] */
+
+    psemu_bus_write8(&ps->bus, 0x100, 0x11u);
+    psemu_bus_write8(&ps->bus, 0x101, 0x22u);
+    psemu_bus_write8(&ps->bus, 0x102, 0x33u);
+    psemu_bus_write8(&ps->bus, 0x103, 0x80u);
+    ps->cpu.r[1] = 0x100;
+
+    /* LDRH at 0x100 is aligned: a plain halfword read. */
+    ps->cpu.r[2] = 0;
+    put16(ps, 0, ldrh_r0);
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[0] == 0x2211u);
+
+    /* LDRH at 0x101 and at 0x103: the aligned halfword, rotated right by 8 bits in 32 bits. */
+    ps->cpu.r[2] = 1;
+    put16(ps, 2, ldrh_r0);
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[0] == 0x11000022u);
+
+    ps->cpu.r[2] = 3;
+    put16(ps, 4, ldrh_r0);
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[0] == 0x33000080u);
+
+    /* LDRH r3,[r4,#2] with r4 = 0x101: the address is 0x103. */
+    ps->cpu.r[4] = 0x101;
+    put16(ps, 6, (uint16_t)(0x8800u | (1u << 6) | (4u << 3) | 3u));
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[3] == 0x33000080u);
+
+    /* LDSH at 0x102 is aligned: a sign-extended halfword read. */
+    ps->cpu.r[2] = 2;
+    put16(ps, 8, ldsh_r5);
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[5] == 0xFFFF8033u);
+
+    /* LDSH at 0x103 and at 0x101: a sign-extended byte read from the odd address. */
+    ps->cpu.r[2] = 3;
+    put16(ps, 10, ldsh_r5);
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[5] == 0xFFFFFF80u);
+
+    ps->cpu.r[2] = 1;
+    put16(ps, 12, ldsh_r5);
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[5] == 0x00000022u);
+
+    psemu_destroy(ps);
+    printf("test_thumb_ldrh_misaligned_quirks OK\n");
 }
 
 static void test_cpu_faulted_flag(void) {
@@ -2807,6 +2918,8 @@ int main(void) {
     test_thumb_basic();
     test_thumb_memory_and_control();
     test_thumb_bl_bx_lr_stays_thumb();
+    test_thumb_ldr_misaligned_rotates();
+    test_thumb_ldrh_misaligned_quirks();
     test_cpu_faulted_flag();
     test_faulted_cpu_stops_advancing();
     test_crash_report_contents();

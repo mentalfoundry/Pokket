@@ -23,13 +23,20 @@ At reset, the CPU starts in Supervisor mode, in the ARM state. The first approxi
 
 - **A Thumb `BL` instruction sets bit 0 of the return address**: `(R15+2)|1`. This is true on ARMv4T. It is not a feature of the ARMv5 `BLX` instruction alone. A set bit 0 makes a later `BX LR` stay in the Thumb state. Corrected in `exec_long_branch_link`. See `test_thumb_bl_bx_lr_stays_thumb`.
 - **An `LDM` instruction with the `^` suffix, where the register list contains `PC`**, for example `LDM SP!,{r1-r12,lr,pc}^`, which is the return sequence of the real SWI handler: this instruction restores the full CPSR from the SPSR of the current mode. It does not restore only `PC`. This encoding is different from `MOVS PC,LR` and `SUBS PC,LR`. Corrected in `exec_block_transfer`. See `test_arm_ldm_exception_return`.
-- **A misaligned `LDRH` instruction, at an odd address,** reads the aligned halfword below the address, and then rotates the result right by 8 bits. Thus it exchanges the two bytes of the halfword before the value gets to the register. It does not only round the address down and discard the low bit.
+- **A misaligned load does not stop the CPU, and it does not only round the address down.** Screens 16 to 18 of `pk_timing_bench` measure each of the three load instructions on real hardware, in the ARM state and in the Thumb state, against the WRAM bytes `11 22 33 84 55 66 77 88`. The two states give the same value in each case:
 
-  **A misaligned `LDRSH` instruction** does not get that rotation and sign extension. Real hardware instead does a sign-extended byte load (`LDRSB`) from the odd address.
+  | Instruction | Address | Real hardware | Rule |
+  |---|---|---|---|
+  | `LDR` | +1 | `11843322` | The aligned word, rotated right by 8 bits for each byte of misalignment. |
+  | `LDR` | +3 | `33221184` | |
+  | `LDRH` | +1 | `11000022` | The aligned halfword, rotated right by 8 bits in 32 bits. Thus the byte at the odd address is in bits 0 to 7, and the byte below it is in bits 24 to 31. |
+  | `LDRH` | +3 | `33000084` | |
+  | `LDRSH` | +1 | `00000022` | A sign-extended byte load (`LDRSB`) from the odd address. It is not a rotated halfword. |
+  | `LDRSH` | +3 | `FFFFFF84` | |
 
-  Corrected in `exec_halfword_transfer`. See `test_arm_ldrh_misaligned_quirks`.
+  `exec_single_transfer` and `exec_halfword_transfer` (`core/src/arm_exec.c`) hold the ARM rules. `read32_rotated`, `read16_rotated`, and `read16_signed` (`core/src/thumb_exec.c`) hold the Thumb rules. In the Thumb state, the `LDR` rule applies to the three forms that take a register base: `LDR Rd,[Rb,Ro]`, `LDR Rd,[Rb,#imm]`, and `LDR Rd,[SP,#imm]`. See `test_arm_ldrh_misaligned_quirks`, `test_thumb_ldr_misaligned_rotates`, and `test_thumb_ldrh_misaligned_quirks`.
 
-  The font-glyph routine of a real homebrew ID editor found this behavior. That routine reads a byte-packed table one byte at a time, with `LDRH Rd,[Rn],#1`, which is a post-increment of 1 and not 2. It then masks the result to the low byte. That method operates only because of the rotation above.
+  Two real apps depend on these rules, and each one uses only the low byte of the result. The font-glyph routine of a real homebrew ID editor reads a byte-packed table one byte at a time, with `LDRH Rd,[Rn],#1`, which is a post-increment of 1 and not 2. The menu routine of a real fighting-game app reads a table of sprite frame numbers with a Thumb `LDR Rd,[Rb,Ro]` at each byte address. Without the `LDR` rotation, each group of four menu entries shows the same graphic. Real hardware shows a different graphic for each entry. Because these apps use only the low byte, they cannot show the upper bits of an `LDRH` result. Only screen 17 shows them.
 - **FIQ has a higher priority than IRQ.** FIQ entry sets both `CPSR.F` and `CPSR.I`. IRQ entry, SWI entry, and abort entry set only `CPSR.I`. See "Interrupt controller" below.
 
 The CPU clock speed is variable, and `CLK_MODE` controls it. See "CLK_MODE" below.
