@@ -82,7 +82,12 @@ I'll endeavour not to serve you spaghetti. Hope you enjoy the sauce.
 This emulator uses the hardware documentation of Martin Korth,
 [psx-spx](https://problemkaputt.de/psx-spx.htm), for the PS1 and the PocketStation. The
 [psx-spx project](https://psx-spx.consoledev.net/) keeps that documentation and corrects it.
-Thank you to Martin Korth and to each contributor of psx-spx.
+
+The PocketStation and the Game Boy Advance use the same CPU, the ARM7TDMI. This emulator uses
+the CPU documentation in [GBATEK](https://problemkaputt.de/gbatek.htm), also by Martin Korth,
+for the behavior of that CPU. psx-spx does not give the instruction set of the CPU.
+
+Thank you to Martin Korth, and to each contributor of psx-spx.
 
 ## License
 

@@ -6,8 +6,10 @@ The facts here come from three sources, in this order of trust:
 
 1. A direct test on real hardware.
 2. A trace of real BIOS execution and real app execution, with `tools/inspect.c`, against real dumps. This repository does not contain those dumps. See `testdata/`, which .gitignore excludes.
-3. The available register documentation: [psx-spx](https://psx-spx.consoledev.net/), which
-   started as the documentation of Martin Korth.
+3. The available documentation. [psx-spx](https://psx-spx.consoledev.net/), which
+   started as the documentation of Martin Korth, gives the registers of the PocketStation.
+   [GBATEK](https://problemkaputt.de/gbatek.htm), also by Martin Korth, gives the behavior of the
+   CPU. See "CPU" below for the reason.
 
 Some facts are inferences, and some are unconfirmed. The section "Known open questions and unconfirmed behavior" at the end lists each one. Do not use an item in that section as a confirmed fact.
 
@@ -16,6 +18,10 @@ A trace of real BIOS execution and real app execution validates the CPU core of 
 ## CPU
 
 The CPU is an ARM7TDMI (ARM and Thumb instruction sets), fabricated by Atmel.
+
+**GBATEK is the CPU documentation of this emulator.** psx-spx gives the hardware of the PocketStation, but it does not give the instruction set of its CPU. The Game Boy Advance uses the same ARM7TDMI, and GBATEK documents that CPU in its "ARM CPU Reference" sections. Those sections give the details that real software can depend on, for example the result of a misaligned load ("ARM CPU Memory Alignments"). The other parts of GBATEK are for the Game Boy Advance and the Nintendo DS. They do not apply to the PocketStation.
+
+GBATEK is documentation, thus it is the third source in the order of trust above. A test on real hardware stays the authority. For the misaligned loads below, the rules of GBATEK and the results of screens 16 to 18 of `pk_timing_bench` on a real unit agree.
 
 At reset, the CPU starts in Supervisor mode, in the ARM state. The first approximately 12 instructions enter FIQ mode, then IRQ mode, and then return to Supervisor mode. Each mode entry initializes the banked stack pointer (SP) of that mode. A real BIOS trace confirms this.
 
