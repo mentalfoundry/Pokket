@@ -1071,14 +1071,17 @@ static void prompt_open_app(menu_context_t *ctx) {
         MessageBoxA(ctx->hwnd, "Couldn't read that file.", "Pokket", MB_ICONERROR);
         return;
     }
+
+    /* Flush any uncommitted app edit to the file that is open now. This call must come before
+       psemu_load_content. That function replaces flash, and content_writeback_poll writes a change
+       immediately. Thus a poll after the load writes the new content into the old file. */
+    content_writeback_poll(ctx->content_writeback, ctx->ps);
+
     if (psemu_load_content(ctx->ps, new_app, new_size) != PSEMU_OK) {
         MessageBoxA(ctx->hwnd, "Not a valid app or memory-card image.", "Pokket", MB_ICONERROR);
         free(new_app);
         return;
     }
-
-    /* Flush any uncommitted app edit to disk before the file pointer changes to the new content. */
-    content_writeback_poll(ctx->content_writeback, ctx->ps);
 
     free(*ctx->app);
     *ctx->app = new_app;
