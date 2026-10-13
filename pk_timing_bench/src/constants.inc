@@ -302,3 +302,14 @@
 @ Iterations of a 2-instruction loop: approximately half a second at CLK_MODE
 @ 7, for the connector to settle after the docking level appears.
 .equ COM_DOCK_SETTLE,        0x60000
+
+@ Screens 16 to 18: the result of a misaligned LDR, LDRH, and LDRSH, in the ARM state and in the
+@ Thumb state. See draw_load_screen in loads.s, and ../README.md.
+.equ SCREEN_LOAD_LDR,        16
+.equ SCREEN_LOAD_LDRH,       17
+.equ SCREEN_LOAD_LDRSH,      18
+@ 8 bytes of test data, after the COM captures (which end at WRAM_COM_PAGE).
+.equ WRAM_LOAD_DATA,         0x530
+@ 12 words: 4 for each instruction, in screen order. In each group: ARM +1, ARM +3, Thumb +1,
+@ Thumb +3.
+.equ WRAM_LOAD_RESULTS,      0x540

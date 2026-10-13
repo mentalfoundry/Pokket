@@ -13,7 +13,7 @@ CC      ?= cc
 ASFLAGS = -mcpu=arm7tdmi -I src
 
 SRCS = src/header.s src/icon.s src/mirrors.s src/font.s src/thumb_loop.s \
-       src/start.s src/helpers.s src/experiments.s src/ui.s
+       src/start.s src/helpers.s src/experiments.s src/ui.s src/loads.s
 OBJS = $(SRCS:.s=.o)
 
 all: pk_timing_bench.mcs

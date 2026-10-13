@@ -128,6 +128,14 @@ clr_loop:
     cmp r4, #SCREEN_EXIT_PROMPT
     beq rs_exit_prompt
 
+    @ Screens 16 to 18 draw their own number: the font has no glyph above F.
+    cmp r4, #SCREEN_LOAD_LDR
+    blo rs_glyph
+    mov r0, r4
+    bl draw_load_screen
+    b rs_done
+
+rs_glyph:
     mov r0, r4
     mov r1, #0
     mov r2, #0
@@ -722,7 +730,8 @@ pb_store:
     .ltorg
 
 @ The cycle is 1..11, then SCREEN_STOP_TEST (13), then SCREEN_RTC_RATES (14),
-@ then SCREEN_COM_TIMING (15), wrapping back to 1.
+@ then SCREEN_COM_TIMING (15), then SCREEN_LOAD_LDR to SCREEN_LOAD_LDRSH (16 to
+@ 18), wrapping back to 1.
 @ SCREEN_EXIT_PROMPT (12) is deliberately skipped: it is not a result screen,
 @ it is reached only by holding Action, and tools/pk_exit_test.c depends on its
 @ index, so it stays where it is rather than being renumbered around.
@@ -730,9 +739,12 @@ screen_next:
     push {r0, r1, lr}
     ldr r0, =WRAM_SCREEN_INDEX
     ldr r1, [r0]
-    cmp r1, #SCREEN_COM_TIMING
+    cmp r1, #SCREEN_LOAD_LDRSH
     moveq r1, #1
     beq sn_store
+    cmp r1, #SCREEN_COM_TIMING
+    addhs r1, r1, #1
+    bhs sn_store
     cmp r1, #SCREEN_RTC_RATES
     moveq r1, #SCREEN_COM_TIMING
     beq sn_store
@@ -753,6 +765,9 @@ screen_prev:
     push {r0, r1, lr}
     ldr r0, =WRAM_SCREEN_INDEX
     ldr r1, [r0]
+    cmp r1, #SCREEN_LOAD_LDR
+    subhs r1, r1, #1
+    bhs sp_store
     cmp r1, #SCREEN_COM_TIMING
     moveq r1, #SCREEN_RTC_RATES
     beq sp_store
@@ -765,7 +780,7 @@ screen_prev:
     sub r1, r1, #1
     cmp r1, #1
     bge sp_store
-    mov r1, #SCREEN_COM_TIMING
+    mov r1, #SCREEN_LOAD_LDRSH
 sp_store:
     str r1, [r0]
     pop {r0, r1, lr}

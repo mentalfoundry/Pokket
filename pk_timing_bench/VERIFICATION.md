@@ -165,6 +165,27 @@ See "What real hardware shows in `COM_STAT2`" in [docs/hardware-notes.md](../doc
 
 This emulator gives the same pattern as real hardware: `INT_COM` at the selection with `COM_CTRL1` = 3 and 2, `INT_COM` at Ready with `COM_CTRL1 = 1`, and each masked bit never. Times of `001A` against `0000` are one event split across two samples, as on real hardware. See "The resolution" in [README.md](README.md). The release comes sooner here than on real hardware, because the PS1 of the control run releases /SEL 60us after the byte.
 
+## Screens 16 to 18: what does a misaligned load give?
+
+These values are exact. They have no jitter. See "Screens 16 to 18" in [README.md](README.md) for the meaning of each candidate value.
+
+**Real hardware:** 2026-10-13. **This emulator:** a run on 2026-10-13 that read the WRAM result block at `0x540`.
+
+| screen | row | real hardware | this emulator |
+|---|---|---|---|
+| 16 (`LDR`) | ARM +1 | `11843322` | `11843322` |
+| | ARM +3 | `33221184` | `33221184` |
+| | Thumb +1 | `11843322` | `11843322` |
+| | Thumb +3 | `33221184` | `33221184` |
+| 17 (`LDRH`) | ARM +1 | `11000022` | `11000022` |
+| | ARM +3 | `33000084` | `33000084` |
+| | Thumb +1 | `11000022` | `11000022` |
+| | Thumb +3 | `33000084` | `33000084` |
+| 18 (`LDRSH`) | ARM +1 | `00000022` | `00000022` |
+| | ARM +3 | `FFFFFF84` | `FFFFFF84` |
+| | Thumb +1 | `00000022` | `00000022` |
+| | Thumb +3 | `FFFFFF84` | `FFFFFF84` |
+
 ## What these values settle
 
 - **`FLASH_CTRL` gets the fast 1-cycle data-access rate of WRAM.** Screen 2 gives a test value that is exactly equal to its control value. It does not get the slow 2-cycle rate.
@@ -179,6 +200,7 @@ This emulator gives the same pattern as real hardware: `INT_COM` at the selectio
 - **`CLK control` does not read back the value that software wrote to it.** Screen 13 returns `0x17`, which is the `CLK_MODE` value of the app with the steady bit ORed in. One consequence: this screen cannot answer whether the stop bit clears itself, because there is no readable stop status. The run does show that the CPU started again and continued. Thus the stop does not persist across a wake.
 - **Both documented RTC rates are waveform rates, at 1Hz and 4096Hz, with two transitions for each pulse.** Screen 14 gives 256 transitions in 0.031250 seconds while the RTC is paused, and four transitions in exactly 2.000 seconds while it runs.
 - **`CLK_MODE 7` really is 3,997,696Hz.** That figure had only ever come from documentation. A screen 14 result of exactly 0.031250 seconds is not possible if the real CPU rate is meaningfully different.
+- **A misaligned load gives one rule for each instruction, and the ARM state and the Thumb state agree.** `LDR` rotates the aligned word right by 8 bits for each byte of misalignment. `LDRH` rotates the aligned halfword right by 8 bits in 32 bits, thus the byte below the address goes to bits 24 to 31. `LDRSH` is a sign-extended byte load from the odd address. Screens 16 to 18 give these values.
 
 ## Known differences between this emulator and real hardware
 

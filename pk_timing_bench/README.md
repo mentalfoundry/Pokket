@@ -59,7 +59,7 @@ This app runs its startup measurements one time, at power-on. A person then page
 
 - **RIGHT**: the next screen
 - **LEFT**: the previous screen
-- The screens wrap around: 1 to 11, then screen 13, then screen 14, then screen 15, then 1.
+- The screens wrap around: 1 to 11, then screen 13, then screen 14, then screen 15, then screens 16 to 18, then 1. Thus LEFT from screen 1 goes directly to screen 18.
 - **DOWN**, on screen 13 only, runs the CLK stop test. That is the one measurement here that does not run at startup, because only a button press from a person can end it. See "Screen 13" below.
 - **DOWN**, on screen 15 only, arms the COM timing run before the device goes into a memory card slot, and it clears the captures of the run before. **UP**, on screen 15 only, shows the next stored capture after the device comes out. See "Screen 15" below.
 - **A hold on ACTION** opens a CONTINUE/EXIT prompt. That prompt returns to the system without a hardware reset. UP selects CONTINUE, DOWN selects EXIT, and a new ACTION press confirms the selection. See "Screen index used for the continue/exit prompt" in `src/constants.inc`, and `pb_prompt_confirm_exit` in `src/ui.s`, for the full behavior.
@@ -323,6 +323,36 @@ If the bits before the first change still show `COM_STAT2` bits, `COM_CTRL2 = 3`
 **Real hardware and this emulator agree.** Both give `INT_COM` at the selection with `COM_CTRL1` = 3 and 2, `INT_COM` at Ready with `COM_CTRL1 = 1`, and Ready approximately 60us after the selection. This emulator takes its model of `COM_STAT2` from the real-hardware run of this screen. See [VERIFICATION.md](VERIFICATION.md), and "What real hardware shows in `COM_STAT2`" in [docs/hardware-notes.md](../docs/hardware-notes.md).
 
 **Recovery.** This screen writes no flash. If no PS1 accesses the slot, the run waits until the device comes out of the slot.
+
+### Screens 16 to 18: what does a misaligned load give?
+
+An ARM7TDMI does not stop at a misaligned load. It gives a value, and some real apps use that value. These three screens show the full 32-bit result of each of the three load instructions, in the ARM state and in the Thumb state. They are not timing measurements. They take no interrupts, and they write no flash.
+
+Screen 16 is `LDR`, screen 17 is `LDRH`, and screen 18 is `LDRSH`. The font has no digit above F, thus the top-left of each screen shows its number in hex: `10`, `11`, or `12`. The four rows are:
+
+| row | the instruction state | the address |
+|---|---|---|
+| 1 | ARM | data + 1 |
+| 2 | ARM | data + 3 |
+| 3 | Thumb | data + 1 |
+| 4 | Thumb | data + 3 |
+
+The data is 8 bytes in WRAM: `11 22 33 84 55 66 77 88`. WRAM permits 8-bit, 16-bit, and 32-bit access, thus the result is a property of the CPU, and not of the bus of a different region. The byte at +3 is `84`, with bit 7 set, thus a sign extension of that byte is visible. The loads run each time that the screen is drawn. See `draw_load_screen` in [`src/loads.s`](src/loads.s).
+
+**How to read the result.** Each candidate behavior gives a different value. The first value in each row is the real-hardware result, and this emulator gives the same value:
+
+| row | real hardware | other candidates |
+|---|---|---|
+| `LDR` +1 | `11843322` (the aligned word, rotated right by 8) | `84332211` (the aligned word, no rotation), `55843322` (the true unaligned word) |
+| `LDR` +3 | `33221184` (rotated right by 24) | `84332211`, `77665584` |
+| `LDRH` +1 | `11000022` (the aligned halfword, rotated right by 8 in 32 bits) | `00001122` (the aligned halfword, with its two bytes exchanged in 16 bits), `00002211` (no rotation), `00003322` (the true unaligned halfword) |
+| `LDRH` +3 | `33000084` | `00003384`, `00008433`, `00005584` |
+| `LDRSH` +1 | `00000022` (a sign-extended byte read from the odd address) | `00001122` or `11000022` (a rotated halfword), `00002211` (no rotation) |
+| `LDRSH` +3 | `FFFFFF84` | `FFFF8433` (no rotation), `33FFFF84` (a rotated sign-extended halfword) |
+
+On real hardware, the ARM rows and the Thumb rows of each screen agree. Thumb instructions use the load path of the ARM instructions. A different emulator that gives different ARM and Thumb rows has a fault in one of the two paths.
+
+**Why these screens exist.** Real apps use misaligned loads, but each known app uses only the low byte of the result. A homebrew ID editor reads a font table with `LDRH`, and a fighting-game app reads a table of sprite frame numbers with a Thumb `LDR`. The low byte cannot separate the first two `LDRH` candidates: only the upper bits do. These screens show the full register. See "CPU" in [docs/hardware-notes.md](../docs/hardware-notes.md), and the results in [VERIFICATION.md](VERIFICATION.md).
 
 ### Reading the hex digits
 
