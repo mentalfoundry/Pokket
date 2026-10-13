@@ -1,6 +1,6 @@
 # Pokket
 
-> **Libretro builds:** the buildbot core is out of date while I move it to the new name. After the fix, install **Pokket** from the core downloader and delete the old **pokketstation** core. If you sort saves by core name, move your `.srm` files from the `pokketstation` save folder to `Pokket`.
+> **Libretro builds:** the buildbot core now has a new name. Install **Pokket** from the core downloader and delete the old **pokketstation** core. If you sort saves by core name, move your `.srm` files from the `pokketstation` save folder to `Pokket`.
 
 This is an open-source Sony PocketStation emulator core, written in portable C. It is made for use in a [libretro](https://www.libretro.com/) core, a standalone Windows desktop app and JavaScript for the browser. 
 
