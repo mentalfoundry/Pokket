@@ -4,7 +4,8 @@ This is a libretro core for use with [RetroArch](https://www.retroarch.com/).
 
 ## Prebuilt cores
 
-The libretro buildbot makes this core for Android and for the other supported systems. Get
+The release packages hold this core for Windows only. The libretro buildbot makes this core
+for Linux, macOS, Android, and the other supported systems. Get
 those builds from the [pipelines of the libretro
 repository](https://git.libretro.com/libretro/Pokket/-/pipelines). Select a
 successful pipeline, and then download the artifact for your system. To build the core

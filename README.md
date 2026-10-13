@@ -28,9 +28,9 @@ Download the latest [release](https://github.com/mentalfoundry/Pokket/releases) 
 - [Desktop app](docs/desktop_readme.md#usage)
 - [Libretro core](docs/libretro_readme.md#usage)
 
-The release packages hold the desktop app and the libretro core for Windows, Linux, and
-macOS. For Android and the other systems that libretro supports, get the core from the
-[pipelines of the libretro
+The release packages hold the desktop app and the libretro core for Windows only. The
+desktop app operates only on Windows. For Linux, macOS, Android, and the other systems that
+libretro supports, get the libretro core from the [pipelines of the libretro
 repository](https://git.libretro.com/libretro/Pokket/-/pipelines). See [Prebuilt
 cores](docs/libretro_readme.md#prebuilt-cores) for the steps.
 
@@ -55,7 +55,7 @@ core/                    portable C99 emulation core, with no OS or graphics dep
   src/                   CPU, memory map, LCD, buttons, flash, IR
 frontends/
   libretro/              the libretro core wrapper
-  desktop/               the SDL2 desktop app for Windows, Linux, and macOS
+  desktop/               the SDL2 desktop app for Windows
   vita/                  the PS Vita port (vita2d), built with the vitasdk toolchain
   web/                   the build of the core for a web page (Emscripten)
 tests/                   a smoke test that exercises the public interface
@@ -65,7 +65,7 @@ pk_timing_bench/         a homebrew memory-timing benchmark app (build source an
 
 ## Building
 
-The [build guide of the desktop frontend](docs/desktop_readme.md#building) gives the full build instructions: the prerequisites, and the steps for Windows, Linux, and macOS. The core, the tools, the tests, and the libretro core all build the same way. They need no dependencies except the dependencies in that guide.
+The [build guide of the desktop frontend](docs/desktop_readme.md#building) gives the full build instructions: the prerequisites, and the steps for Windows, Linux, and macOS. The desktop app builds only on Windows. The core, the tools, the tests, and the libretro core all build the same way. They need no dependencies except the dependencies in that guide.
 
 - [Desktop app](docs/desktop_readme.md): usage, speedrun and TAS tools, building, and diagnostic reports.
 - [Libretro core](docs/libretro_readme.md): usage and building. It has one extra step: it gets `libretro-common` at the first configure operation, and that step needs internet access.

@@ -194,6 +194,7 @@ These commands build the core, the tools, the tests, and the libretro core. They
 
 ### Linux and macOS
 
+This desktop frontend builds only on Windows, because its menu bar and its dialogs use the Win32 API. On Linux and macOS, the commands below build the core, the tools, the tests, and the libretro core. The build skips this frontend and gives a warning.
 ```
 cmake -B build -S .
 cmake --build build
