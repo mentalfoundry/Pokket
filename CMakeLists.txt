@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 # The release version. Change this value for each release, to agree with the new git tag. Both
 # frontends show it. It does not come from git, because a build from a source archive has no git.
-project(pokket VERSION 1.22 LANGUAGES C)
+project(pokket VERSION 1.23 LANGUAGES C)
 set(POKKET_VERSION_STRING "v${PROJECT_VERSION}")
 
 # The libretro buildbot's shared CI templates (see gitlab-ci.yml) grab the
