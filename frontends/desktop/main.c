@@ -28,6 +28,8 @@
 #include "resource.h"
 #include "content_writeback.h"
 #include "ir_link.h"
+#include "movie.h"
+#include "rewind.h"
 
 #define SCALE 8
 
@@ -149,7 +151,13 @@ static const char *save_slot_label(int slot) {
    psemu_load_state returns PSEMU_ERR_BAD_FORMAT for a file that it cannot
    read. Thus a new field in psemu_t no longer needs a change here. Change
    this number only for a change to the parts of the file that this app owns:
-   the header, the app size, and the app hash. */
+   the header, the app size, and the app hash.
+
+   A state saved during a movie has a movie trailer after the state data (see
+   movie_write_trailer). A state without a movie has no trailer, and its file is
+   the same as before the trailer existed. Thus the trailer needs no new version.
+   A build without the trailer refuses a file with one, because its length test
+   finds the extra bytes. */
 #define QUICKSAVE_VERSION 7u
 
 /* app_size and app_hash prevent a load of a state that a different app or card
@@ -265,10 +273,10 @@ typedef struct {
        off by default: the numbers have no meaning to a person who only uses the link, and they change
        at each frame. See ir_link_diagnostics in the comment on load_settings above. */
     int ir_link_diagnostics;
-    /* IR Link > Connect Over Network...: the address that the dialog offers first. The format is
+    /* Device > IR Link > Connect Over Network...: the address that the dialog offers first. The format is
        "host:port", and see ir_transport.h. This app writes the value when a connection attempt
        starts, thus a second session needs no retyping.
-       IR Link > Host Over Network...: the port that this app listens on. It is a port and not a
+       Device > IR Link > Host Over Network...: the port that this app listens on. It is a port and not a
        full address, because a host listens on each interface of the machine. */
     char ir_link_peer_address[256];
     char ir_link_listen_port[16];
@@ -288,6 +296,14 @@ typedef struct {
     char key_reset[32];
     char key_quick_save[32];
     char key_quick_load[32];
+    /* These keys are not PocketStation buttons. They operate the speedrun tools: Pause, Frame
+       Advance, Fast Forward (held), Rewind (held), and the read-only mode of a movie (see
+       button_scancodes in main). */
+    char key_pause[32];
+    char key_frame_advance[32];
+    char key_fast_forward[32];
+    char key_rewind[32];
+    char key_movie_read_only[32];
     /* Options > Date/Time Override.
        This value holds a BIOS setting that is in emulated RAM, and not in a
        hardware register (see docs/hardware-notes.md). DATETIME_OVERRIDE_OFF
@@ -312,6 +328,9 @@ typedef struct {
        cannot read it. This app applies it before master_volume. Thus the
        percentage stays a simple loudness control above it. */
     int speaker_sim;
+    /* Device > Rewind. The rewind history costs some megabytes and a state copy at each frame,
+       thus a user can turn it off. See rewind.h. */
+    int rewind_enabled;
 } app_settings_t;
 
 #define DATETIME_OVERRIDE_OFF 0
@@ -649,6 +668,12 @@ static int load_settings(app_settings_t *settings, const char *path) {
     settings->key_reset[0] = '\0';
     settings->key_quick_save[0] = '\0';
     settings->key_quick_load[0] = '\0';
+    settings->key_pause[0] = '\0';
+    settings->key_frame_advance[0] = '\0';
+    settings->key_fast_forward[0] = '\0';
+    settings->key_rewind[0] = '\0';
+    settings->key_movie_read_only[0] = '\0';
+    settings->rewind_enabled = 1;
     settings->show_console = 0;
     settings->ir_link_diagnostics = 0;
     settings->ir_link_peer_address[0] = '\0';
@@ -699,6 +724,18 @@ static int load_settings(app_settings_t *settings, const char *path) {
                 snprintf(settings->key_quick_save, sizeof(settings->key_quick_save), "%s", line + 15);
             } else if (strncmp(line, "key_quick_load=", 15) == 0) {
                 snprintf(settings->key_quick_load, sizeof(settings->key_quick_load), "%s", line + 15);
+            } else if (strncmp(line, "key_pause=", 10) == 0) {
+                snprintf(settings->key_pause, sizeof(settings->key_pause), "%s", line + 10);
+            } else if (strncmp(line, "key_frame_advance=", 18) == 0) {
+                snprintf(settings->key_frame_advance, sizeof(settings->key_frame_advance), "%s", line + 18);
+            } else if (strncmp(line, "key_fast_forward=", 17) == 0) {
+                snprintf(settings->key_fast_forward, sizeof(settings->key_fast_forward), "%s", line + 17);
+            } else if (strncmp(line, "key_rewind=", 11) == 0) {
+                snprintf(settings->key_rewind, sizeof(settings->key_rewind), "%s", line + 11);
+            } else if (strncmp(line, "key_movie_read_only=", 20) == 0) {
+                snprintf(settings->key_movie_read_only, sizeof(settings->key_movie_read_only), "%s", line + 20);
+            } else if (strncmp(line, "rewind=", 7) == 0) {
+                settings->rewind_enabled = atoi(line + 7) != 0;
             } else if (strncmp(line, "datetime_override=", 18) == 0) {
                 settings->datetime_override =
                     strcmp(line + 18, "os") == 0 ? DATETIME_OVERRIDE_OS : DATETIME_OVERRIDE_OFF;
@@ -771,6 +808,24 @@ static int load_settings(app_settings_t *settings, const char *path) {
     if (settings->key_quick_load[0] == '\0') {
         snprintf(settings->key_quick_load, sizeof(settings->key_quick_load), "%s", SDL_GetScancodeName(SDL_SCANCODE_F9));
     }
+    if (settings->key_pause[0] == '\0') {
+        snprintf(settings->key_pause, sizeof(settings->key_pause), "%s", SDL_GetScancodeName(SDL_SCANCODE_P));
+    }
+    if (settings->key_frame_advance[0] == '\0') {
+        snprintf(settings->key_frame_advance, sizeof(settings->key_frame_advance), "%s",
+            SDL_GetScancodeName(SDL_SCANCODE_F));
+    }
+    if (settings->key_fast_forward[0] == '\0') {
+        snprintf(settings->key_fast_forward, sizeof(settings->key_fast_forward), "%s",
+            SDL_GetScancodeName(SDL_SCANCODE_TAB));
+    }
+    if (settings->key_rewind[0] == '\0') {
+        snprintf(settings->key_rewind, sizeof(settings->key_rewind), "%s", SDL_GetScancodeName(SDL_SCANCODE_BACKSPACE));
+    }
+    if (settings->key_movie_read_only[0] == '\0') {
+        snprintf(settings->key_movie_read_only, sizeof(settings->key_movie_read_only), "%s",
+            SDL_GetScancodeName(SDL_SCANCODE_Q));
+    }
     return existed;
 }
 
@@ -794,6 +849,12 @@ static void save_settings(const app_settings_t *settings, const char *path) {
     fprintf(f, "key_reset=%s\n", settings->key_reset);
     fprintf(f, "key_quick_save=%s\n", settings->key_quick_save);
     fprintf(f, "key_quick_load=%s\n", settings->key_quick_load);
+    fprintf(f, "key_pause=%s\n", settings->key_pause);
+    fprintf(f, "key_frame_advance=%s\n", settings->key_frame_advance);
+    fprintf(f, "key_fast_forward=%s\n", settings->key_fast_forward);
+    fprintf(f, "key_rewind=%s\n", settings->key_rewind);
+    fprintf(f, "key_movie_read_only=%s\n", settings->key_movie_read_only);
+    fprintf(f, "rewind=%d\n", settings->rewind_enabled ? 1 : 0);
     fprintf(f, "datetime_override=%s\n", settings->datetime_override == DATETIME_OVERRIDE_OS ? "os" : "default");
     fprintf(f, "master_volume=%d\n", settings->master_volume);
     fprintf(f, "speaker=%s\n", SPEAKER_SIM_PRESETS[clamp_speaker_sim(settings->speaker_sim)].name);
@@ -854,12 +915,21 @@ typedef struct {
 } button_binding_t;
 
 /* The number of rows in Options > Remap Controls: Up, Down, Left, Right, and Fire,
-   and then 4 hotkeys that are not buttons: Create Debug Log, Reset, Save State,
-   and Load State.
+   then 4 hotkeys that are not buttons: Create Debug Log, Reset, Save State, and
+   Load State, then 5 speedrun hotkeys: Pause, Frame Advance, Fast Forward,
+   Rewind, and Movie Read-Only.
    This value agrees with the row count of IDD_REMAP_CONTROLS.
    It also agrees with the IDC_REMAP_LABEL_BASE and IDC_REMAP_CHANGE_BASE ranges
-   in resource.h. Each of those ranges has 9 sequential IDs. */
-#define REMAP_BINDING_COUNT 9
+   in resource.h. Each of those ranges has 14 sequential IDs. */
+#define REMAP_BINDING_COUNT 14
+
+/* The positions of the speedrun hotkeys in button_scancodes. Positions 0 to 8 keep
+   the numbers that the code below uses for them. */
+#define BINDING_PAUSE 9
+#define BINDING_FRAME_ADVANCE 10
+#define BINDING_FAST_FORWARD 11
+#define BINDING_REWIND 12
+#define BINDING_MOVIE_READ_ONLY 13
 
 /* This app writes this marker into a key_* field in settings.cfg, in place of a
    real key name. It does this when a user clears that row, because a different
@@ -906,8 +976,8 @@ static void format_key_binding_name(char *out, size_t out_size, SDL_Scancode sca
 
 /* The inverse of resolve_key_binding.
    `bindings` must hold exactly REMAP_BINDING_COUNT entries. The order is fixed:
-   Up, Down, Left, Right, Fire, Create Debug Log, Reset, Save State, and Load
-   State (see button_scancodes in main). */
+   Up, Down, Left, Right, Fire, Create Debug Log, Reset, Save State, Load State,
+   and then the speedrun hotkeys (see button_scancodes in main). */
 static void save_key_bindings(app_settings_t *settings, const button_binding_t bindings[REMAP_BINDING_COUNT]) {
     format_key_binding_name(settings->key_up, sizeof(settings->key_up), bindings[0].scancode);
     format_key_binding_name(settings->key_down, sizeof(settings->key_down), bindings[1].scancode);
@@ -918,6 +988,14 @@ static void save_key_bindings(app_settings_t *settings, const button_binding_t b
     format_key_binding_name(settings->key_reset, sizeof(settings->key_reset), bindings[6].scancode);
     format_key_binding_name(settings->key_quick_save, sizeof(settings->key_quick_save), bindings[7].scancode);
     format_key_binding_name(settings->key_quick_load, sizeof(settings->key_quick_load), bindings[8].scancode);
+    format_key_binding_name(settings->key_pause, sizeof(settings->key_pause), bindings[BINDING_PAUSE].scancode);
+    format_key_binding_name(
+        settings->key_frame_advance, sizeof(settings->key_frame_advance), bindings[BINDING_FRAME_ADVANCE].scancode);
+    format_key_binding_name(
+        settings->key_fast_forward, sizeof(settings->key_fast_forward), bindings[BINDING_FAST_FORWARD].scancode);
+    format_key_binding_name(settings->key_rewind, sizeof(settings->key_rewind), bindings[BINDING_REWIND].scancode);
+    format_key_binding_name(settings->key_movie_read_only, sizeof(settings->key_movie_read_only),
+        bindings[BINDING_MOVIE_READ_ONLY].scancode);
 }
 
 static uint8_t *read_file(const char *path, size_t *out_size) {
@@ -942,6 +1020,34 @@ static uint8_t *read_file(const char *path, size_t *out_size) {
     *out_size = (size_t)size;
     return buf;
 }
+
+/* Device > Speed, as a percentage of real time. EMU_SPEED_UNLIMITED runs each
+   frame with no wait. The menu items use the same order, from
+   ID_EMU_SPEED_BASE. */
+#define EMU_SPEED_UNLIMITED 0
+static const int EMU_SPEEDS[] = {25, 50, 100, 200, 400, EMU_SPEED_UNLIMITED};
+#define EMU_SPEED_NORMAL_INDEX 2
+
+/* The state of the speedrun tools that the menu and the main loop share. None of
+   it is part of the machine, thus no movie and no save state holds it. */
+typedef struct {
+    int paused;
+    /* The frames that Frame Advance asked for. The main loop runs them while the
+       emulation is paused. */
+    int frame_advance_requests;
+    int speed_index;
+    /* The Fast Forward key is held. */
+    int fast_forward;
+    /* The last iteration of the main loop did a rewind step. */
+    int rewinding;
+    /* A reset during a movie waits for the next frame. A movie holds a reset as
+       part of the input of a frame (see MOVIE_INPUT_RESET). */
+    int reset_pending;
+    /* The input of the last frame, for the title. */
+    uint8_t last_input;
+    /* The text that refresh_title wrote last. */
+    char title[192];
+} emu_control_t;
 
 /* The state that the WM_COMMAND handlers of the menu bar must access.
    This structure collects that state, because SDL_SetWindowsMessageHook accepts
@@ -969,33 +1075,86 @@ typedef struct {
     const char *exe_dir;
     ir_link_t *ir_link;
     content_writeback_t *content_writeback;
+    movie_t *movie;
+    rewind_t *rewind;
+    emu_control_t *control;
 } menu_context_t;
 
-/* Shows the live status of the IR link as the full window title, for example
-   "IR - Connected". This title replaces the usual "Pokket" title while the link is active. The
-   text is deliberately short: the default window is small, thus Windows cuts a longer title. The status
-   is the one item that a user must see quickly.
+/* Writes the five buttons as five characters, in the order Up, Down, Left, Right,
+   Fire, with '.' for a button that is not pressed. */
+static void format_input(uint8_t input, char out[6]) {
+    out[0] = (input & PSEMU_BUTTON_UP) ? 'U' : '.';
+    out[1] = (input & PSEMU_BUTTON_DOWN) ? 'D' : '.';
+    out[2] = (input & PSEMU_BUTTON_LEFT) ? 'L' : '.';
+    out[3] = (input & PSEMU_BUTTON_RIGHT) ? 'R' : '.';
+    out[4] = (input & PSEMU_BUTTON_FIRE) ? 'F' : '.';
+    out[5] = '\0';
+}
+
+/* Shows the live status as the window title. The window has no other location
+   for text: the screen is the 32x32 LCD.
+
+   The first part is "Pokket", or the status of the IR link while the link is
+   active, for example "IR - Connected". The text is deliberately short: the
+   default window is small, thus Windows cuts a longer title.
    The hosting state and the connecting state get their own short strings. They do not use the text of
    ir_link_status_text, because ir_link_selftest.c and ir_probe also use that text for console output.
    That text can hold more detail than this title permits. The connected state and the error states use
    status_text without a change: "Connected" is already short, and it also contains the live counters if
    ir_link_diagnostics is on. The detail of an error message is also necessary.
-   Each action that can change the state of ir_link calls this function. Those actions are Host,
-   Connect, and Disconnect in the menu.
-   The main loop also calls this function one time for each frame. A link that hosts or connects can
-   change its state without a menu selection: a peer connects, or the link fails. */
-static void ir_link_refresh_title(menu_context_t *ctx) {
-    char title[192];
+
+   The speedrun status follows: the movie mode, the frame, the rerecord count,
+   read-only or read-write, and the input of the last frame; then Paused; then the
+   speed. For example "Pokket - Play 1200/4000 rr31 RO .D..F - Paused".
+
+   Each action that can change the status calls this function, and the main loop
+   calls it at each frame. A link can change its state without a menu selection: a
+   peer connects, or the link fails. This function calls SetWindowTextA only when
+   the text changes. */
+static void refresh_title(menu_context_t *ctx) {
+    const movie_t *m = ctx->movie;
+    emu_control_t *c = ctx->control;
+    char base[160];
+    char movie_part[96] = "";
+    char speed_part[24] = "";
+    char title[sizeof(c->title)];
+
     if (!ir_link_is_active(ctx->ir_link)) {
-        snprintf(title, sizeof(title), "Pokket");
+        snprintf(base, sizeof(base), "Pokket");
     } else if (ctx->ir_link->state == IR_LINK_HOSTING) {
-        snprintf(title, sizeof(title), "IR - Waiting...");
+        snprintf(base, sizeof(base), "IR - Waiting...");
     } else if (ctx->ir_link->state == IR_LINK_CONNECTING) {
-        snprintf(title, sizeof(title), "IR - Connecting...");
+        snprintf(base, sizeof(base), "IR - Connecting...");
     } else {
-        snprintf(title, sizeof(title), "IR - %s", ir_link_status_text(ctx->ir_link));
+        snprintf(base, sizeof(base), "IR - %s", ir_link_status_text(ctx->ir_link));
     }
-    SetWindowTextA(ctx->hwnd, title);
+
+    if (movie_is_active(m)) {
+        char input[6];
+        format_input(c->last_input, input);
+        if (m->mode == MOVIE_RECORDING) {
+            snprintf(movie_part, sizeof(movie_part), " - Rec %u rr%u %s", (unsigned)m->frame,
+                (unsigned)m->rerecords, input);
+        } else {
+            snprintf(movie_part, sizeof(movie_part), " - %s %u/%u rr%u %s %s",
+                m->mode == MOVIE_PLAYING ? "Play" : "End", (unsigned)m->frame, (unsigned)m->length,
+                (unsigned)m->rerecords, m->read_only ? "RO" : "RW", input);
+        }
+    }
+    if (c->rewinding) {
+        snprintf(speed_part, sizeof(speed_part), " - Rewind");
+    } else if (c->fast_forward) {
+        snprintf(speed_part, sizeof(speed_part), " - Fast Forward");
+    } else if (EMU_SPEEDS[c->speed_index] == EMU_SPEED_UNLIMITED) {
+        snprintf(speed_part, sizeof(speed_part), " - Max Speed");
+    } else if (c->speed_index != EMU_SPEED_NORMAL_INDEX) {
+        snprintf(speed_part, sizeof(speed_part), " - %d%%", EMU_SPEEDS[c->speed_index]);
+    }
+    snprintf(title, sizeof(title), "%s%s%s%s", base, movie_part, c->paused ? " - Paused" : "", speed_part);
+    if (strcmp(title, c->title) != 0) {
+        snprintf(c->title, sizeof(c->title), "%s", title);
+        SetWindowTextA(ctx->hwnd, title);
+    }
 }
 
 /* psemu_reset and psemu_load_state both clear the clock of ir_t and each edge in its queues (see the
@@ -1006,8 +1165,52 @@ static void ir_link_refresh_title(menu_context_t *ctx) {
 static void drop_ir_link_if_active(menu_context_t *ctx) {
     if (ir_link_is_active(ctx->ir_link)) {
         ir_link_disconnect(ctx->ir_link);
-        ir_link_refresh_title(ctx);
+        refresh_title(ctx);
     }
+}
+
+static void write_movie_or_warn(menu_context_t *ctx) {
+    char msg[1200];
+    if (!movie_write(ctx->movie)) {
+        snprintf(msg, sizeof(msg), "Couldn't write the movie file %s.", ctx->movie->path);
+        MessageBoxA(ctx->hwnd, msg, "Pokket", MB_ICONERROR);
+    }
+}
+
+/* Ends the active movie, and writes it first if it changed.
+
+   SAVE WRITE-BACK WAITS DURING A MOVIE. A movie loads its own start state, and that state holds its
+   own copy of the card. A playback of a movie from a different person must not write the card of
+   that person into the file of the user, and a rerecord session must not write each branch of the
+   run. Thus the main loop does not poll write-back while a movie is active. At the end of the movie,
+   the current flash becomes the new baseline, the same as after a state load: the movie replaced
+   the card in memory, and that replacement is not an edit that an app made. */
+static void stop_movie(menu_context_t *ctx) {
+    if (!movie_is_active(ctx->movie)) {
+        return;
+    }
+    if (ctx->movie->dirty) {
+        write_movie_or_warn(ctx);
+    }
+    movie_close(ctx->movie);
+    ctx->control->reset_pending = 0;
+    content_writeback_resync(ctx->content_writeback, ctx->ps);
+}
+
+/* A movie holds only the buttons and the resets. An IR link or a new hardware ID during a movie
+   changes the machine outside the movie, and the playback then desyncs. Returns a nonzero value,
+   after a message, if a movie is active. */
+static int refuse_during_movie(menu_context_t *ctx, const char *what) {
+    char msg[256];
+    if (!movie_is_active(ctx->movie)) {
+        return 0;
+    }
+    snprintf(msg, sizeof(msg),
+        "%s isn't available while a movie is active, because a movie can't record it.\n\n"
+        "Stop the movie first (File > Movie > Stop Movie).",
+        what);
+    MessageBoxA(ctx->hwnd, msg, "Pokket", MB_ICONWARNING);
+    return 1;
 }
 
 static void prompt_open_bios(menu_context_t *ctx) {
@@ -1041,7 +1244,9 @@ static void prompt_open_bios(menu_context_t *ctx) {
     *ctx->bios = new_bios;
     *ctx->bios_size = new_size;
     snprintf(ctx->bios_path, ctx->bios_path_cap, "%s", path);
+    stop_movie(ctx);
     psemu_reset(ctx->ps);
+    rewind_clear(ctx->rewind);
     drop_ir_link_if_active(ctx);
     *ctx->cpu_faulted_reported = 0;
 
@@ -1074,7 +1279,9 @@ static void prompt_open_app(menu_context_t *ctx) {
 
     /* Flush any uncommitted app edit to the file that is open now. This call must come before
        psemu_load_content. That function replaces flash, and content_writeback_poll writes a change
-       immediately. Thus a poll after the load writes the new content into the old file. */
+       immediately. Thus a poll after the load writes the new content into the old file. A movie
+       ends here also: its flash is not an edit to write (see stop_movie). */
+    stop_movie(ctx);
     content_writeback_poll(ctx->content_writeback, ctx->ps);
 
     if (psemu_load_content(ctx->ps, new_app, new_size) != PSEMU_OK) {
@@ -1089,6 +1296,7 @@ static void prompt_open_app(menu_context_t *ctx) {
     snprintf(ctx->app_path, ctx->app_path_cap, "%s", path);
     psemu_reset(ctx->ps);
     content_writeback_arm(ctx->content_writeback, ctx->ps, path, new_app, new_size);
+    rewind_clear(ctx->rewind);
     drop_ir_link_if_active(ctx);
     *ctx->cpu_faulted_reported = 0;
 }
@@ -1100,12 +1308,30 @@ static void prompt_open_app(menu_context_t *ctx) {
    dialog. */
 static void reset_emulation(menu_context_t *ctx) {
     /* A reset does not change flash (see psemu_reset). Flush any uncommitted app edit, then use the
-       post-reset flash as the new baseline. */
-    content_writeback_poll(ctx->content_writeback, ctx->ps);
+       post-reset flash as the new baseline. During a movie, write-back waits (see stop_movie). */
+    if (!movie_is_active(ctx->movie)) {
+        content_writeback_poll(ctx->content_writeback, ctx->ps);
+    }
     psemu_reset(ctx->ps);
     content_writeback_resync(ctx->content_writeback, ctx->ps);
     drop_ir_link_if_active(ctx);
     *ctx->cpu_faulted_reported = 0;
+}
+
+/* File > Reset and the Reset key. A movie holds a reset as part of the input of a frame. Thus,
+   during a movie, the reset waits for the next frame, and the main loop gives it to
+   movie_next_input with the buttons. A playback ignores a live reset, the same as each other live
+   input. While paused, the reset occurs at the next Frame Advance. */
+static void request_reset(menu_context_t *ctx) {
+    if (!movie_is_active(ctx->movie)) {
+        reset_emulation(ctx);
+        return;
+    }
+    if (ctx->movie->mode == MOVIE_PLAYING) {
+        MessageBeep(MB_ICONWARNING);
+        return;
+    }
+    ctx->control->reset_pending = 1;
 }
 
 static void save_state_to_slot(menu_context_t *ctx, int slot) {
@@ -1114,7 +1340,9 @@ static void save_state_to_slot(menu_context_t *ctx, int slot) {
     get_save_slot_path(path, sizeof(path), ctx->exe_dir, ctx->app_path, slot);
 
     size_t state_size = psemu_state_size(ctx->ps);
-    size_t total_size = sizeof(quicksave_header_t) + state_size;
+    /* During a movie, the movie trailer follows the state (see QUICKSAVE_VERSION). */
+    size_t trailer_size = movie_is_active(ctx->movie) ? movie_trailer_size(ctx->movie) : 0;
+    size_t total_size = sizeof(quicksave_header_t) + state_size + trailer_size;
     uint8_t *buf = (uint8_t *)malloc(total_size);
     if (!buf) {
         MessageBoxA(ctx->hwnd, "Out of memory.", "Pokket", MB_ICONERROR);
@@ -1128,6 +1356,9 @@ static void save_state_to_slot(menu_context_t *ctx, int slot) {
     header.app_hash = psemu_content_identity_hash(*ctx->app, *ctx->app_size);
     memcpy(buf, &header, sizeof(header));
     psemu_save_state(ctx->ps, buf + sizeof(header), state_size);
+    if (trailer_size) {
+        movie_write_trailer(ctx->movie, buf + sizeof(header) + state_size);
+    }
 
     FILE *f = fopen(path, "wb");
     if (!f || fwrite(buf, 1, total_size, f) != total_size) {
@@ -1138,6 +1369,12 @@ static void save_state_to_slot(menu_context_t *ctx, int slot) {
         fclose(f);
     }
     free(buf);
+
+    /* A user saves a state at a point to keep. Thus the movie is also written here, and a crash after
+       this point loses no frame before it. */
+    if (movie_is_active(ctx->movie) && ctx->movie->dirty) {
+        write_movie_or_warn(ctx);
+    }
 }
 
 static void load_state_from_slot(menu_context_t *ctx, int slot) {
@@ -1182,7 +1419,10 @@ static void load_state_from_slot(menu_context_t *ctx, int slot) {
        then loads a state with an incorrect alignment and gives no error.
        QUICKSAVE_VERSION must find both conditions, but it operates only if a
        person increases it at each change to psemu_t. This test does not depend
-       on a person. */
+       on a person.
+       A movie trailer can follow the state. The trailer holds its own length,
+       and movie_trailer_is_valid compares that length with the remainder of the
+       file. Thus the length test stays exact. */
     long body_start = ftell(f);
     if (body_start < 0 || fseek(f, 0, SEEK_END) != 0) {
         snprintf(msg, sizeof(msg), "Couldn't read the save state in %s.", save_slot_label(slot));
@@ -1191,7 +1431,7 @@ static void load_state_from_slot(menu_context_t *ctx, int slot) {
         return;
     }
     long body_size = ftell(f) - body_start;
-    if (body_size != (long)state_size || fseek(f, body_start, SEEK_SET) != 0) {
+    if (body_size < (long)state_size || fseek(f, body_start, SEEK_SET) != 0) {
         snprintf(msg, sizeof(msg), "Couldn't load the save state in %s (wrong build/version?).",
             save_slot_label(slot));
         MessageBoxA(ctx->hwnd, msg, "Pokket", MB_ICONERROR);
@@ -1199,18 +1439,68 @@ static void load_state_from_slot(menu_context_t *ctx, int slot) {
         return;
     }
 
-    uint8_t *buf = (uint8_t *)malloc(state_size);
-    if (!buf || fread(buf, 1, state_size, f) != state_size || psemu_load_state(ctx->ps, buf, state_size) != PSEMU_OK) {
-        snprintf(msg, sizeof(msg), "Couldn't load the save state in %s (wrong build/version?).",
-            save_slot_label(slot));
+    uint8_t *buf = (uint8_t *)malloc((size_t)body_size);
+    if (!buf || fread(buf, 1, (size_t)body_size, f) != (size_t)body_size) {
+        snprintf(msg, sizeof(msg), "Couldn't read the save state in %s.", save_slot_label(slot));
         MessageBoxA(ctx->hwnd, msg, "Pokket", MB_ICONERROR);
         free(buf);
         fclose(f);
         return;
     }
-
-    free(buf);
     fclose(f);
+
+    const uint8_t *trailer = buf + state_size;
+    size_t trailer_size = (size_t)body_size - state_size;
+    const char *refusal = NULL;
+    if (trailer_size > 0 && !movie_trailer_is_valid(trailer, trailer_size)) {
+        refusal = "The save state in %s is damaged or from a different build.";
+    } else if (movie_is_active(ctx->movie)) {
+        switch (trailer_size ? movie_check_trailer(ctx->movie, trailer, trailer_size) : MOVIE_TRAILER_OTHER_MOVIE) {
+        case MOVIE_TRAILER_OK:
+            break;
+        case MOVIE_TRAILER_OTHER_MOVIE:
+            refusal = "The save state in %s doesn't belong to the active movie.\n\n"
+                      "A movie can only load a state that was saved during the same movie.";
+            break;
+        case MOVIE_TRAILER_NOT_IN_TIMELINE:
+            refusal = "The save state in %s is from a different branch of this movie.\n\n"
+                      "In read-only mode, a state must agree with the inputs of the movie. "
+                      "Turn off read-only to load it and record from it.";
+            break;
+        case MOVIE_TRAILER_PAST_END:
+            refusal = "The save state in %s is after the end of the movie, where the movie holds no input.\n\n"
+                      "Turn on read-only to load it.";
+            break;
+        default:
+            refusal = "The save state in %s is damaged or from a different build.";
+            break;
+        }
+    }
+    if (refusal) {
+        char long_msg[512];
+        snprintf(long_msg, sizeof(long_msg), refusal, save_slot_label(slot));
+        MessageBoxA(ctx->hwnd, long_msg, "Pokket", MB_ICONERROR);
+        free(buf);
+        return;
+    }
+
+    if (psemu_load_state(ctx->ps, buf, state_size) != PSEMU_OK) {
+        snprintf(msg, sizeof(msg), "Couldn't load the save state in %s (wrong build/version?).",
+            save_slot_label(slot));
+        MessageBoxA(ctx->hwnd, msg, "Pokket", MB_ICONERROR);
+        free(buf);
+        return;
+    }
+    if (movie_is_active(ctx->movie) && !movie_apply_trailer(ctx->movie, trailer, trailer_size)) {
+        MessageBoxA(ctx->hwnd, "Out of memory. The movie stopped.", "Pokket", MB_ICONERROR);
+        stop_movie(ctx);
+    }
+    free(buf);
+    /* The rewind history is the past of the machine before this load. It is not the past of the
+       loaded state, and a rewind into it during a movie gives a machine that the movie does not
+       make. */
+    rewind_clear(ctx->rewind);
+    ctx->control->reset_pending = 0;
     /* A save state contains its own copy of flash. Thus the full card changed, and no app wrote to
        it. That change is not an edit to write to the file. Use it as the new baseline instead, and
        write only the changes that the app makes after this point. */
@@ -2046,7 +2336,7 @@ static void show_about(menu_context_t *ctx) {
     DialogBoxParamA(GetModuleHandleA(NULL), MAKEINTRESOURCEA(IDD_ABOUT), ctx->hwnd, about_dialog_proc, 0);
 }
 
-/* The handlers for IR Link > Host Local Session, Connect Local Session, and Disconnect.
+/* The handlers for Device > IR Link > Host Local Session, Connect Local Session, and Disconnect.
    These handlers use one fixed pipe name, IR_LINK_DEFAULT_PIPE_NAME. They do not use a dialog that asks
    for a name. One fixed name is the simplest method that operates for two instances on one machine.
    See ir_link.h for the transport. */
@@ -2055,21 +2345,21 @@ static void ir_link_host_from_menu(menu_context_t *ctx) {
        transport in place, thus each item selects its own transport before it starts. */
     ir_link_set_transport(ctx->ir_link, IR_LINK_TRANSPORT_PIPE);
     ir_link_host(ctx->ir_link, IR_LINK_DEFAULT_PIPE_NAME);
-    ir_link_refresh_title(ctx);
+    refresh_title(ctx);
 }
 
 static void ir_link_connect_from_menu(menu_context_t *ctx) {
     ir_link_set_transport(ctx->ir_link, IR_LINK_TRANSPORT_PIPE);
     ir_link_connect(ctx->ir_link, IR_LINK_DEFAULT_PIPE_NAME);
-    ir_link_refresh_title(ctx);
+    refresh_title(ctx);
 }
 
 static void ir_link_disconnect_from_menu(menu_context_t *ctx) {
     ir_link_disconnect(ctx->ir_link);
-    ir_link_refresh_title(ctx);
+    refresh_title(ctx);
 }
 
-/* The dialog for the two network items of the IR Link menu. One dialog serves both, and the caller
+/* The dialog for the two network items of Device > IR Link. One dialog serves both, and the caller
    gives the caption and the label. See IDD_IR_ADDRESS in resource.rc. */
 typedef struct {
     const char *caption;
@@ -2107,7 +2397,7 @@ static INT_PTR CALLBACK ir_address_dialog_proc(HWND hdlg, UINT msg, WPARAM wpara
     return FALSE;
 }
 
-/* IR Link > Host Over Network...
+/* Device > IR Link > Host Over Network...
    It asks for a port, and not for a full address. A host listens on each interface of this machine, thus
    a peer can reach it at any address that the machine holds. */
 static void ir_link_host_net_from_menu(menu_context_t *ctx) {
@@ -2123,10 +2413,10 @@ static void ir_link_host_net_from_menu(menu_context_t *ctx) {
     save_settings(ctx->settings, ctx->settings_path);
     ir_link_set_transport(ctx->ir_link, IR_LINK_TRANSPORT_TCP);
     ir_link_host(ctx->ir_link, data.address);
-    ir_link_refresh_title(ctx);
+    refresh_title(ctx);
 }
 
-/* IR Link > Connect Over Network... */
+/* Device > IR Link > Connect Over Network... */
 static void ir_link_connect_net_from_menu(menu_context_t *ctx) {
     ir_address_dialog_data_t data;
     data.caption = "Connect Over Network";
@@ -2140,7 +2430,190 @@ static void ir_link_connect_net_from_menu(menu_context_t *ctx) {
     save_settings(ctx->settings, ctx->settings_path);
     ir_link_set_transport(ctx->ir_link, IR_LINK_TRANSPORT_TCP);
     ir_link_connect(ctx->ir_link, data.address);
-    ir_link_refresh_title(ctx);
+    refresh_title(ctx);
+}
+
+/* A random id for a new movie. The id only has to be different for two movies of one user. Thus the
+   performance counter, the time, and the process id, mixed together, are sufficient. */
+static uint64_t new_movie_id(void) {
+    LARGE_INTEGER counter;
+    uint64_t id;
+    QueryPerformanceCounter(&counter);
+    id = (uint64_t)counter.QuadPart ^ ((uint64_t)time(NULL) << 32) ^ (uint64_t)GetCurrentProcessId();
+    id ^= id >> 33;
+    id *= 0xFF51AFD7ED558CCDull;
+    id ^= id >> 33;
+    return id;
+}
+
+/* The name that the Record Movie dialog offers: the file name of the loaded app or card, without
+   its extension, and then ".pkm". */
+static void default_movie_name(const char *app_path, char *out, size_t out_size) {
+    const char *base = app_path;
+    const char *dot = NULL;
+    const char *p;
+    for (p = app_path; *p != '\0'; p++) {
+        if (*p == '/' || *p == '\\') {
+            base = p + 1;
+            dot = NULL;
+        } else if (*p == '.') {
+            dot = p;
+        }
+    }
+    if (*base == '\0') {
+        snprintf(out, out_size, "movie.pkm");
+        return;
+    }
+    snprintf(out, out_size, "%.*s.pkm", dot ? (int)(dot - base) : (int)strlen(base), base);
+}
+
+/* File > Movie > Record Movie... */
+static void record_movie_from_menu(menu_context_t *ctx) {
+    char path[1024];
+    OPENFILENAMEA ofn;
+    int answer;
+
+    if (!*ctx->bios) {
+        MessageBoxA(ctx->hwnd, "Load a BIOS first (File > Load BIOS...).", "Pokket", MB_ICONWARNING);
+        return;
+    }
+    default_movie_name(ctx->app_path, path, sizeof(path));
+    memset(&ofn, 0, sizeof(ofn));
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = ctx->hwnd;
+    ofn.lpstrFilter = "Pokket movie (*.pkm)\0*.pkm\0All files (*.*)\0*.*\0";
+    ofn.lpstrFile = path;
+    ofn.nMaxFile = sizeof(path);
+    ofn.lpstrTitle = "Record Movie";
+    ofn.lpstrDefExt = "pkm";
+    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    if (!GetSaveFileNameA(&ofn)) {
+        return;
+    }
+
+    /* A movie for a speedrun site usually must start from power-on. A movie from the current state is
+       useful to practice one part of a run. */
+    answer = MessageBoxA(ctx->hwnd,
+        "Record from power-on?\n\n"
+        "Yes: reset the PocketStation, then record. Use this for a movie that other people will verify.\n"
+        "No: record from the current state.",
+        "Record Movie", MB_YESNOCANCEL | MB_ICONQUESTION);
+    if (answer == IDCANCEL) {
+        return;
+    }
+
+    stop_movie(ctx);
+    content_writeback_poll(ctx->content_writeback, ctx->ps);
+    drop_ir_link_if_active(ctx);
+    if (answer == IDYES) {
+        reset_emulation(ctx);
+    }
+    if (!movie_start_recording(ctx->movie, ctx->ps, path, new_movie_id(), answer == IDYES ? MOVIE_FLAG_POWER_ON : 0u,
+            movie_crc32(*ctx->bios, *ctx->bios_size), (uint32_t)*ctx->app_size,
+            psemu_content_identity_hash(*ctx->app, *ctx->app_size), POKKET_VERSION)) {
+        MessageBoxA(ctx->hwnd, "Out of memory.", "Pokket", MB_ICONERROR);
+        return;
+    }
+    rewind_clear(ctx->rewind);
+    ctx->control->reset_pending = 0;
+    /* Write the empty movie now. Thus a path that cannot be written gives its error immediately, and
+       not after an hour of recording. */
+    if (!movie_write(ctx->movie)) {
+        char msg[1200];
+        snprintf(msg, sizeof(msg), "Couldn't write the movie file %s.", path);
+        MessageBoxA(ctx->hwnd, msg, "Pokket", MB_ICONERROR);
+        movie_close(ctx->movie);
+        content_writeback_resync(ctx->content_writeback, ctx->ps);
+    }
+}
+
+/* File > Movie > Play Movie... A playback always starts read-only, thus a stray key cannot change a
+   movie. */
+static void play_movie_from_menu(menu_context_t *ctx) {
+    char path[1024] = {0};
+    char err[160];
+    OPENFILENAMEA ofn;
+    movie_t loaded;
+
+    memset(&ofn, 0, sizeof(ofn));
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = ctx->hwnd;
+    ofn.lpstrFilter = "Pokket movie (*.pkm)\0*.pkm\0All files (*.*)\0*.*\0";
+    ofn.lpstrFile = path;
+    ofn.nMaxFile = sizeof(path);
+    ofn.lpstrTitle = "Play Movie";
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    if (!GetOpenFileNameA(&ofn)) {
+        return;
+    }
+
+    movie_init(&loaded);
+    if (!movie_open(&loaded, path, err, sizeof(err))) {
+        MessageBoxA(ctx->hwnd, err, "Pokket", MB_ICONERROR);
+        return;
+    }
+    if (!*ctx->bios) {
+        MessageBoxA(ctx->hwnd, "Load a BIOS first (File > Load BIOS...).", "Pokket", MB_ICONWARNING);
+        movie_close(&loaded);
+        return;
+    }
+    /* The movie holds its own card, thus a playback with a different app or card still runs. But
+       write-back and the save-state slots belong to the loaded content. This test is the same test
+       that a state load does. */
+    if (loaded.content_size != (uint32_t)*ctx->app_size ||
+        loaded.content_hash != psemu_content_identity_hash(*ctx->app, *ctx->app_size)) {
+        MessageBoxA(ctx->hwnd, "This movie was recorded with a different app or card. Open that app or card first.",
+            "Pokket", MB_ICONERROR);
+        movie_close(&loaded);
+        return;
+    }
+    if (loaded.bios_crc != movie_crc32(*ctx->bios, *ctx->bios_size) &&
+        MessageBoxA(ctx->hwnd,
+            "This movie was recorded with a different BIOS dump, and it will probably desync.\n\nPlay it anyway?",
+            "Pokket", MB_YESNO | MB_ICONWARNING) != IDYES) {
+        movie_close(&loaded);
+        return;
+    }
+
+    stop_movie(ctx);
+    content_writeback_poll(ctx->content_writeback, ctx->ps);
+    drop_ir_link_if_active(ctx);
+    if (movie_load_start_state(&loaded, ctx->ps) != PSEMU_OK) {
+        MessageBoxA(ctx->hwnd,
+            "Couldn't load the start state of this movie. A different version of Pokket with a different "
+            "save-state format probably recorded it.",
+            "Pokket", MB_ICONERROR);
+        movie_close(&loaded);
+        return;
+    }
+    /* The structure moves into place, and the buffers move with it. */
+    *ctx->movie = loaded;
+    content_writeback_resync(ctx->content_writeback, ctx->ps);
+    rewind_clear(ctx->rewind);
+    ctx->control->reset_pending = 0;
+    *ctx->cpu_faulted_reported = 0;
+}
+
+static void toggle_movie_read_only(menu_context_t *ctx) {
+    if (!movie_is_active(ctx->movie)) {
+        MessageBeep(MB_ICONWARNING);
+        return;
+    }
+    movie_set_read_only(ctx->movie, !ctx->movie->read_only);
+    refresh_title(ctx);
+}
+
+static void toggle_pause(menu_context_t *ctx) {
+    ctx->control->paused = !ctx->control->paused;
+    ctx->control->frame_advance_requests = 0;
+    refresh_title(ctx);
+}
+
+/* Frame Advance pauses the emulation and then runs one frame. Thus the first press during a run
+   stops the run one frame later. */
+static void frame_advance(menu_context_t *ctx) {
+    ctx->control->paused = 1;
+    ctx->control->frame_advance_requests++;
 }
 
 /* Gives the color preset that is in effect, as its menu command ID. It returns 0
@@ -2274,6 +2747,31 @@ static void sync_menu_state(menu_context_t *ctx) {
             CheckMenuRadioItem(colors_menu, ID_COLORS_STANDARD, ID_COLORS_CLASSIC, preset, MF_BYCOMMAND);
         }
     }
+
+    /* The Device menu and File > Movie. CheckMenuItem and EnableMenuItem with MF_BYCOMMAND search
+       each submenu of `root`, thus these items need no find_menu_containing call. The radio group of
+       Speed does need it: CheckMenuRadioItem needs the popup menu that holds the group. */
+    {
+        int movie_active = movie_is_active(ctx->movie);
+        CheckMenuItem(root, ID_EMU_PAUSE, MF_BYCOMMAND | (ctx->control->paused ? MF_CHECKED : MF_UNCHECKED));
+        CheckMenuItem(
+            root, ID_EMU_REWIND_ENABLE, MF_BYCOMMAND | (ctx->settings->rewind_enabled ? MF_CHECKED : MF_UNCHECKED));
+        HMENU speed_menu = find_menu_containing(root, ID_EMU_SPEED_BASE);
+        if (speed_menu != NULL) {
+            CheckMenuRadioItem(speed_menu, ID_EMU_SPEED_BASE, ID_EMU_SPEED_LAST,
+                ID_EMU_SPEED_BASE + ctx->control->speed_index, MF_BYCOMMAND);
+        }
+        EnableMenuItem(root, ID_MOVIE_STOP, MF_BYCOMMAND | (movie_active ? MF_ENABLED : MF_GRAYED));
+        EnableMenuItem(root, ID_MOVIE_READ_ONLY, MF_BYCOMMAND | (movie_active ? MF_ENABLED : MF_GRAYED));
+        CheckMenuItem(root, ID_MOVIE_READ_ONLY,
+            MF_BYCOMMAND | (movie_active && ctx->movie->read_only ? MF_CHECKED : MF_UNCHECKED));
+        /* A movie holds only buttons and resets. See refuse_during_movie. */
+        static const int movie_blocked_ids[] = {
+            ID_IR_HOST, ID_IR_CONNECT, ID_IR_HOST_NET, ID_IR_CONNECT_NET, ID_TOOLS_EDIT_HWID};
+        for (int i = 0; i < (int)(sizeof(movie_blocked_ids) / sizeof(movie_blocked_ids[0])); i++) {
+            EnableMenuItem(root, movie_blocked_ids[i], MF_BYCOMMAND | (movie_active ? MF_GRAYED : MF_ENABLED));
+        }
+    }
 }
 
 /* SDL_SetWindowsMessageHook installs this function.
@@ -2320,6 +2818,14 @@ static void SDLCALL handle_windows_message(void *userdata, void *hwnd, unsigned 
     }
     if (LOWORD(wparam) >= ID_FILE_LOAD_SLOT_BASE && LOWORD(wparam) <= ID_FILE_LOAD_SLOT_LAST) {
         load_state_from_slot(ctx, (int)(LOWORD(wparam) - ID_FILE_LOAD_SLOT_BASE));
+        sync_menu_state(ctx);
+        return;
+    }
+    /* Device > Speed uses one contiguous ID range, in the order of EMU_SPEEDS. */
+    if (LOWORD(wparam) >= ID_EMU_SPEED_BASE && LOWORD(wparam) <= ID_EMU_SPEED_LAST) {
+        ctx->control->speed_index = (int)(LOWORD(wparam) - ID_EMU_SPEED_BASE);
+        refresh_title(ctx);
+        sync_menu_state(ctx);
         return;
     }
     switch (LOWORD(wparam)) {
@@ -2330,13 +2836,41 @@ static void SDLCALL handle_windows_message(void *userdata, void *hwnd, unsigned 
         prompt_open_app(ctx);
         break;
     case ID_FILE_RESET:
-        reset_emulation(ctx);
+        request_reset(ctx);
         break;
     case ID_FILE_EXIT:
         *ctx->running = 0;
         break;
+    case ID_MOVIE_RECORD:
+        record_movie_from_menu(ctx);
+        break;
+    case ID_MOVIE_PLAY:
+        play_movie_from_menu(ctx);
+        break;
+    case ID_MOVIE_STOP:
+        stop_movie(ctx);
+        break;
+    case ID_MOVIE_READ_ONLY:
+        toggle_movie_read_only(ctx);
+        break;
+    case ID_EMU_PAUSE:
+        toggle_pause(ctx);
+        break;
+    case ID_EMU_FRAME_ADVANCE:
+        frame_advance(ctx);
+        break;
+    case ID_EMU_REWIND_ENABLE:
+        ctx->settings->rewind_enabled = !ctx->settings->rewind_enabled;
+        if (!ctx->settings->rewind_enabled) {
+            /* Release the memory of the history. */
+            rewind_clear(ctx->rewind);
+        }
+        save_settings(ctx->settings, ctx->settings_path);
+        break;
     case ID_TOOLS_EDIT_HWID:
-        prompt_edit_hardware_id(ctx);
+        if (!refuse_during_movie(ctx, "A change of the hardware ID")) {
+            prompt_edit_hardware_id(ctx);
+        }
         break;
     case ID_TOOLS_REMAP_CONTROLS:
         prompt_remap_controls(ctx);
@@ -2371,16 +2905,24 @@ static void SDLCALL handle_windows_message(void *userdata, void *hwnd, unsigned 
         show_about(ctx);
         break;
     case ID_IR_HOST:
-        ir_link_host_from_menu(ctx);
+        if (!refuse_during_movie(ctx, "IR Link")) {
+            ir_link_host_from_menu(ctx);
+        }
         break;
     case ID_IR_CONNECT:
-        ir_link_connect_from_menu(ctx);
+        if (!refuse_during_movie(ctx, "IR Link")) {
+            ir_link_connect_from_menu(ctx);
+        }
         break;
     case ID_IR_HOST_NET:
-        ir_link_host_net_from_menu(ctx);
+        if (!refuse_during_movie(ctx, "IR Link")) {
+            ir_link_host_net_from_menu(ctx);
+        }
         break;
     case ID_IR_CONNECT_NET:
-        ir_link_connect_net_from_menu(ctx);
+        if (!refuse_during_movie(ctx, "IR Link")) {
+            ir_link_connect_net_from_menu(ctx);
+        }
         break;
     case ID_IR_DISCONNECT:
         ir_link_disconnect_from_menu(ctx);
@@ -2738,18 +3280,20 @@ int main(int argc, char **argv) {
     /* The live map from a key to a PocketStation button. The main loop reads this
        map at each frame.
        The order is fixed: Up, Down, Left, Right, Fire, Create Debug Log, Reset,
-       Quick Save State, and Quick Load State.
+       Quick Save State, Quick Load State, and then the speedrun hotkeys from
+       BINDING_PAUSE to BINDING_MOVIE_READ_ONLY.
        This order agrees with IDC_REMAP_LABEL_BASE, IDC_REMAP_CHANGE_BASE, and
        save_key_bindings.
        This array is not const and not static: Options > Remap Controls... changes
        the entries through menu_ctx.button_scancodes, which points to this same
        array.
-       The last 4 entries (Create Debug Log, Reset, Save State, and Load State)
-       are not PocketStation buttons. Their bit value is 0, thus the loop below
-       ORs them into the button mask with no effect.
+       Each entry after Fire is not a PocketStation button. Its bit value is 0,
+       thus the loop below ORs it into the button mask with no effect.
        The SDL_KEYDOWN tests below use their scancodes. Each test causes its
        action at a real key-down edge, one time for each press. It does not cause
-       the action at each frame while the user holds the key. */
+       the action at each frame while the user holds the key. Fast Forward and
+       Rewind are different: they operate while the key is held, thus the main
+       loop reads them from SDL_GetKeyboardState. */
     button_binding_t button_scancodes[REMAP_BINDING_COUNT] = {
         {resolve_key_binding(settings.key_up, SDL_SCANCODE_UP), PSEMU_BUTTON_UP, "Up"},
         {resolve_key_binding(settings.key_down, SDL_SCANCODE_DOWN), PSEMU_BUTTON_DOWN, "Down"},
@@ -2760,7 +3304,24 @@ int main(int argc, char **argv) {
         {resolve_key_binding(settings.key_reset, SDL_SCANCODE_F8), 0, "Reset"},
         {resolve_key_binding(settings.key_quick_save, SDL_SCANCODE_F5), 0, "Save State"},
         {resolve_key_binding(settings.key_quick_load, SDL_SCANCODE_F9), 0, "Load State"},
+        {resolve_key_binding(settings.key_pause, SDL_SCANCODE_P), 0, "Pause"},
+        {resolve_key_binding(settings.key_frame_advance, SDL_SCANCODE_F), 0, "Frame Advance"},
+        {resolve_key_binding(settings.key_fast_forward, SDL_SCANCODE_TAB), 0, "Fast Forward"},
+        {resolve_key_binding(settings.key_rewind, SDL_SCANCODE_BACKSPACE), 0, "Rewind"},
+        {resolve_key_binding(settings.key_movie_read_only, SDL_SCANCODE_Q), 0, "Movie Read-Only"},
     };
+    /* A row with no line in settings.cfg gets its default key. A user can have given that key to a
+       different row before the row existed. Two rows cannot share a key (see prompt_remap_controls),
+       thus the later row loses the key, and the earlier choice of the user stays. */
+    for (i = 1; i < REMAP_BINDING_COUNT; i++) {
+        int j;
+        for (j = 0; j < i; j++) {
+            if (button_scancodes[i].scancode != SDL_SCANCODE_UNKNOWN &&
+                button_scancodes[i].scancode == button_scancodes[j].scancode) {
+                button_scancodes[i].scancode = SDL_SCANCODE_UNKNOWN;
+            }
+        }
+    }
 
     fprintf(stderr, "psemu: press %s at any time to write a diagnostic report to a pokket_report_*.log file\n",
         SDL_GetScancodeName(button_scancodes[5].scancode));
@@ -2788,6 +3349,30 @@ int main(int argc, char **argv) {
     menu_ctx.exe_dir = exe_dir;
     menu_ctx.ir_link = &ir_link;
     menu_ctx.content_writeback = &content_writeback;
+
+    movie_t movie;
+    movie_init(&movie);
+    menu_ctx.movie = &movie;
+
+    /* The rewind history holds at most 10 minutes, and at most 64MB of differences. A usual frame
+       costs some hundred bytes, thus the frame limit is usually the active limit. See rewind.h. */
+    size_t state_size = psemu_state_size(ps);
+    uint8_t *rewind_state = (uint8_t *)malloc(state_size);
+    rewind_t rewind;
+    memset(&rewind, 0, sizeof(rewind));
+    if (!rewind_state || !rewind_init(&rewind, state_size, 32u * 60u * 10u, 64u * 1024u * 1024u)) {
+        /* rewind_init leaves an empty buffer, whose functions do nothing. A NULL rewind_state stops
+           the main loop before it uses the buffer. */
+        fprintf(stderr, "psemu: no memory for the rewind history - rewind is off for this session\n");
+        free(rewind_state);
+        rewind_state = NULL;
+    }
+    menu_ctx.rewind = &rewind;
+
+    emu_control_t control;
+    memset(&control, 0, sizeof(control));
+    control.speed_index = EMU_SPEED_NORMAL_INDEX;
+    menu_ctx.control = &control;
     SDL_SetWindowsMessageHook(handle_windows_message, &menu_ctx);
 
     uint32_t pixels[PSEMU_LCD_WIDTH * PSEMU_LCD_HEIGHT];
@@ -2851,6 +3436,13 @@ int main(int argc, char **argv) {
        sync_menu_state. */
     sync_menu_state(&menu_ctx);
 
+    /* The number of iterations that Frame Advance must be held before it repeats, approximately 0.4
+       seconds. While paused, one iteration is one wait of 31ms. */
+#define FRAME_ADVANCE_REPEAT_DELAY 12
+    int frame_advance_held = 0;
+    int rewind_key_was_held = 0;
+    Uint32 last_present_ticks = 0;
+
     while (running) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -2867,8 +3459,9 @@ int main(int argc, char **argv) {
                 snprintf(reason, sizeof(reason), "manual (%s)", SDL_GetScancodeName(button_scancodes[5].scancode));
                 write_diagnostic_report(ps, reason, frame, bios_path, app_path);
             } else if (event.type == SDL_KEYDOWN && event.key.keysym.scancode == button_scancodes[6].scancode) {
-                /* Remappable via Options > Remap Controls..., default F8. See button_scancodes above. */
-                reset_emulation(&menu_ctx);
+                /* Remappable via Options > Remap Controls..., default F8. See button_scancodes above.
+                   During a movie, the reset waits for the next frame (see request_reset). */
+                request_reset(&menu_ctx);
             } else if (event.type == SDL_KEYDOWN && event.key.keysym.scancode == button_scancodes[7].scancode) {
                 /* Options > Remap Controls... can change this key. The default is F5.
                    See button_scancodes above.
@@ -2879,156 +3472,275 @@ int main(int argc, char **argv) {
             } else if (event.type == SDL_KEYDOWN && event.key.keysym.scancode == button_scancodes[8].scancode) {
                 /* Remappable via Options > Remap Controls..., default F9. See button_scancodes above. */
                 load_state_from_slot(&menu_ctx, 0);
+                sync_menu_state(&menu_ctx);
+            } else if (event.type == SDL_KEYDOWN && !event.key.repeat &&
+                       event.key.keysym.scancode == button_scancodes[BINDING_PAUSE].scancode) {
+                /* The key repeat of the system must not toggle the pause again. */
+                toggle_pause(&menu_ctx);
+                sync_menu_state(&menu_ctx);
+            } else if (event.type == SDL_KEYDOWN && !event.key.repeat &&
+                       event.key.keysym.scancode == button_scancodes[BINDING_FRAME_ADVANCE].scancode) {
+                /* One frame for each press. A held key repeats with its own delay, below, and not with
+                   the key repeat of the system. */
+                frame_advance(&menu_ctx);
+                sync_menu_state(&menu_ctx);
+            } else if (event.type == SDL_KEYDOWN && !event.key.repeat &&
+                       event.key.keysym.scancode == button_scancodes[BINDING_MOVIE_READ_ONLY].scancode) {
+                toggle_movie_read_only(&menu_ctx);
+                sync_menu_state(&menu_ctx);
             }
         }
 
         const uint8_t *keys = SDL_GetKeyboardState(NULL);
-        uint32_t buttons = 0;
-        size_t bi;
-        for (bi = 0; bi < sizeof(button_scancodes) / sizeof(button_scancodes[0]); bi++) {
-            int held = keys[button_scancodes[bi].scancode] != 0;
-            /* A press that is shorter than the minimum continues to read as
-               pressed. frames_pressed[bi] stays at 0 until a real key-down
-               event occurs. Thus this code never makes a press for a key that
-               was never down. The counter stops at the minimum, thus a long
-               hold adds no time after the release. */
-            int pressed = held || (frames_pressed[bi] > 0 && frames_pressed[bi] < BUTTON_MIN_PRESS_FRAMES);
-            if (pressed) {
-                if (frames_pressed[bi] < BUTTON_MIN_PRESS_FRAMES) {
-                    frames_pressed[bi]++;
+        /* Fast Forward and Rewind operate while their keys are held. */
+        control.fast_forward = keys[button_scancodes[BINDING_FAST_FORWARD].scancode] != 0;
+        int rewind_key_held = keys[button_scancodes[BINDING_REWIND].scancode] != 0;
+        if (control.paused && keys[button_scancodes[BINDING_FRAME_ADVANCE].scancode]) {
+            if (++frame_advance_held > FRAME_ADVANCE_REPEAT_DELAY && control.frame_advance_requests == 0) {
+                control.frame_advance_requests = 1;
+            }
+        } else {
+            frame_advance_held = 0;
+        }
+
+        /* Each iteration does one of three things: a rewind step, one frame, or nothing while the
+           emulation is paused. */
+        int ran_frame = 0;
+        control.rewinding = 0;
+        if (rewind_key_held && rewind_state != NULL && settings.rewind_enabled) {
+            /* One step back for each iteration, thus a rewind goes back at the speed of the
+               emulation. The step loads a state, thus it has the same effects as a state load. During
+               a movie, the movie goes back to the same frame. In read-write mode, the inputs after that
+               frame are removed, and the first step of each hold counts one rerecord. */
+            uint32_t rewind_frame;
+            if (rewind_pop(&rewind, rewind_state, &rewind_frame)) {
+                drop_ir_link_if_active(&menu_ctx);
+                if (psemu_load_state(ps, rewind_state, state_size) == PSEMU_OK) {
+                    movie_seek(&movie, rewind_frame, !rewind_key_was_held);
+                    content_writeback_resync(&content_writeback, ps);
+                    cpu_faulted_reported = 0;
+                    control.reset_pending = 0;
                 }
-                buttons |= button_scancodes[bi].bit;
-            } else {
-                frames_pressed[bi] = 0;
             }
-        }
-        psemu_set_buttons(ps, buttons);
-
-        /* This budget is 33000 cycles for each frame, at a 32Hz refresh rate. The
-           effective rate is approximately 1.056MHz.
-           This value reverses an earlier change that made the budget agree with
-           RTC_TICK_CYCLES in rtc.h (approximately 4MHz). That earlier change was
-           an assumption with no validation: it matched one uncalibrated constant
-           to another.
-           A test on real hardware showed that the earlier value made the
-           on-screen blink rate too fast.
-           Real hardware operates at a variable clock rate, to a maximum of
-           approximately 7.995MHz (see the CPU_FREQ table in core/src/clk.c, and
-           docs/hardware-notes.md, "CLK_MODE").
-           psemu_run scales its total throughput by two values: the CLK_MODE value
-           that the app programs, and the real cycle cost of each instruction (see
-           "Memory access timing" in docs/hardware-notes.md).
-           This fixed budget for each frame is a real-time reference rate. It is
-           not an approximation of an instruction count.
-           This code keeps 33000 cycles for each frame because a test on real
-           hardware confirms that the result is correct. The value has no
-           independent derivation.
-           See PSEMU_ASSUMED_CPU_HZ in dac.h for the applicable audio-rate
-           conversion (33000 * 32). If this value changes, change that value to
-           agree with it. */
-        /* If the CPU meets an opcode that this emulator does not recognize, the
-           register state and the memory state have no more meaning.
-           A real, confirmed fault that this method found (see
-           docs/hardware-notes.md, "Known open questions") gets to this point after
-           approximately 1.3 billion instructions of correct operation.
-           Do not assume that this state is safe because the fault has not occurred
-           yet.
-           Stop the CPU when this flag becomes set, and hold the last correct
-           frame.
-           Do not continue to execute incorrect data, and do not do this without a
-           message.
-           Before this correction, such a continuation looked to a user like an
-           unexplained stop or crash, with no diagnostic data. */
-        /* Options > Date/Time Override.
-           This setting is in emulated RAM, and the system menus of the BIOS also
-           write to that RAM. Thus, to hold a value, this app must write the value
-           again. One write is not sufficient. A write at each frame here also
-           covers a reset, the startup, and a state load, with no extra code.
-           There is no event to miss, because the next frame corrects each change.
-
-           The cost is a few byte stores against the approximately 26,500
-           instructions that a frame already emulates.
-
-           psemu_settings_offsets_known guards this code. Thus this app makes no
-           change on a BIOS revision that nobody traced. This agrees with the
-           disabled menu items.
-
-           psemu_app_running also guards this code, because a write at each frame
-           is correct only while the BIOS shell owns that RAM. When the BIOS
-           dispatches an app from the card, those two bytes belong to the app. A
-           write to them 32 times each second then corrupts the app. With one
-           real trading-card app, this was sufficient to make the app reject the
-           PS1 save on the card and show its "ODD DATA" screen. That result is how
-           this project found the fault. The override starts again when the app
-           returns control. */
-        if (psemu_settings_offsets_known(ps) && settings.datetime_override == DATETIME_OVERRIDE_OS &&
-            !psemu_app_running(ps)) {
-            SYSTEMTIME now;
-            GetLocalTime(&now);
-            /* In SYSTEMTIME, wDayOfWeek gives 0 for Sunday. The RTC field
-               gives 1 for Sunday. psemu_set_datetime refuses the call while
-               the BIOS programs the clock, and the next frame tries again. */
-            psemu_set_datetime(
-                ps, now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond, (int)now.wDayOfWeek + 1);
-        }
-
-        if (!psemu_cpu_faulted(ps)) {
-            psemu_run(ps, 33000);
-        } else if (!cpu_faulted_reported) {
-            cpu_faulted_reported = 1;
-            fprintf(
-                stderr, "psemu: CPU hit an unrecognized opcode and has stopped - this is a real emulator bug, "
-                        "not something you did. The game is frozen on its last good frame; please report this "
-                        "along with what you were doing right before it happened.\n");
-            write_diagnostic_report(ps, "cpu fault (unrecognized opcode)", frame, bios_path, app_path);
-        }
-
-        /* Moves the new TX edges of this frame onto the pipe.
-           It also sends each RX edge that arrived from the other instance after the last frame.
-           Those edges arrive in time for the psemu_run call of the next frame, which processes
-           them through ir_tick.
-           This is the same one-frame resolution, approximately 31ms, that each other input path
-           uses. The buttons are one example. See ir_link.h.
-           The status of ir_link can change here with no menu action: a peer connects, or the link
-           fails. Thus this code writes the title again at each change of the status text. */
-        {
-            const char *status_before = ir_link_status_text(&ir_link);
-            char status_before_copy[sizeof(((ir_link_t *)0)->status)];
-            snprintf(status_before_copy, sizeof(status_before_copy), "%s", status_before);
-            ir_link_pump(&ir_link, ps);
-            if (strcmp(status_before_copy, ir_link_status_text(&ir_link)) != 0) {
-                ir_link_refresh_title(&menu_ctx);
+            control.rewinding = 1;
+        } else if (!control.paused || control.frame_advance_requests > 0) {
+            if (control.frame_advance_requests > 0) {
+                control.frame_advance_requests--;
             }
-        }
-
-        if (audio_dev != 0) {
-            uint32_t n = psemu_get_audio_samples(ps, audio_buf, sizeof(audio_buf) / sizeof(audio_buf[0]));
-            if (n > 0) {
-                /* Options > Sound > Volume. This code reads the value at each frame,
-                   thus a change takes effect at the next frame. This code always
-                   drains the core, and it queues silence at 0%. If it did not queue
-                   the silence, the data in the buffer would continue to play, and the
-                   audio clock of this instance would become different from its
-                   frames.
-                   The speaker filter operates first. Thus the percentage stays a
-                   simple loudness control above the output of the speaker. It does not
-                   change how much the gain of the filter drives into the limiter of
-                   that filter. */
-                apply_speaker_filter(&speaker_filter, audio_buf, n, settings.speaker_sim);
-                apply_master_volume(audio_buf, n, clamp_master_volume(settings.master_volume));
-                SDL_QueueAudio(audio_dev, audio_buf, n * sizeof(audio_buf[0]));
+            uint32_t buttons = 0;
+            size_t bi;
+            /* A frame that runs while paused is a Frame Advance. The user holds each key across
+               that frame on purpose, thus the minimum press does not apply: the frame gets exactly
+               the held keys. Without this, a press of one frame, which a TAS can need, is not
+               possible. The counter goes to the value that adds no time after the release. */
+            int exact_input = control.paused;
+            for (bi = 0; bi < sizeof(button_scancodes) / sizeof(button_scancodes[0]); bi++) {
+                int held = keys[button_scancodes[bi].scancode] != 0;
+                if (exact_input) {
+                    frames_pressed[bi] = held ? BUTTON_MIN_PRESS_FRAMES : 0;
+                    if (held) {
+                        buttons |= button_scancodes[bi].bit;
+                    }
+                    continue;
+                }
+                /* A press that is shorter than the minimum continues to read as
+                   pressed. frames_pressed[bi] stays at 0 until a real key-down
+                   event occurs. Thus this code never makes a press for a key that
+                   was never down. The counter stops at the minimum, thus a long
+                   hold adds no time after the release. */
+                int pressed = held || (frames_pressed[bi] > 0 && frames_pressed[bi] < BUTTON_MIN_PRESS_FRAMES);
+                if (pressed) {
+                    if (frames_pressed[bi] < BUTTON_MIN_PRESS_FRAMES) {
+                        frames_pressed[bi]++;
+                    }
+                    buttons |= button_scancodes[bi].bit;
+                } else {
+                    frames_pressed[bi] = 0;
+                }
             }
+
+            /* The rewind history gets the state before this frame. Thus a rewind step gives the
+               state that this frame started from, and the movie position of that state. */
+            if (rewind_state != NULL && settings.rewind_enabled) {
+                psemu_save_state(ps, rewind_state, state_size);
+                rewind_push(&rewind, rewind_state, movie.frame);
+            }
+
+            /* The movie gives the input of this frame: the live input during a recording, which it
+               also keeps, or its own input during a playback. Without a movie, the live input passes
+               through. A reset is part of the input. */
+            uint8_t live = (uint8_t)(buttons | (control.reset_pending ? MOVIE_INPUT_RESET : 0u));
+            control.reset_pending = 0;
+            uint8_t input = movie_next_input(&movie, live);
+            control.last_input = (uint8_t)(input & MOVIE_INPUT_BUTTONS);
+            if (input & MOVIE_INPUT_RESET) {
+                reset_emulation(&menu_ctx);
+            }
+            psemu_set_buttons(ps, input & MOVIE_INPUT_BUTTONS);
+
+            /* This budget is 33000 cycles for each frame, at a 32Hz refresh rate. The
+               effective rate is approximately 1.056MHz.
+               This value reverses an earlier change that made the budget agree with
+               RTC_TICK_CYCLES in rtc.h (approximately 4MHz). That earlier change was
+               an assumption with no validation: it matched one uncalibrated constant
+               to another.
+               A test on real hardware showed that the earlier value made the
+               on-screen blink rate too fast.
+               Real hardware operates at a variable clock rate, to a maximum of
+               approximately 7.995MHz (see the CPU_FREQ table in core/src/clk.c, and
+               docs/hardware-notes.md, "CLK_MODE").
+               psemu_run scales its total throughput by two values: the CLK_MODE value
+               that the app programs, and the real cycle cost of each instruction (see
+               "Memory access timing" in docs/hardware-notes.md).
+               This fixed budget for each frame is a real-time reference rate. It is
+               not an approximation of an instruction count.
+               This code keeps 33000 cycles for each frame because a test on real
+               hardware confirms that the result is correct. The value has no
+               independent derivation.
+               See PSEMU_ASSUMED_CPU_HZ in dac.h for the applicable audio-rate
+               conversion (33000 * 32). If this value changes, change that value to
+               agree with it. */
+            /* If the CPU meets an opcode that this emulator does not recognize, the
+               register state and the memory state have no more meaning.
+               A real, confirmed fault that this method found (see
+               docs/hardware-notes.md, "Known open questions") gets to this point after
+               approximately 1.3 billion instructions of correct operation.
+               Do not assume that this state is safe because the fault has not occurred
+               yet.
+               Stop the CPU when this flag becomes set, and hold the last correct
+               frame.
+               Do not continue to execute incorrect data, and do not do this without a
+               message.
+               Before this correction, such a continuation looked to a user like an
+               unexplained stop or crash, with no diagnostic data. */
+            /* Options > Date/Time Override.
+               This setting is in emulated RAM, and the system menus of the BIOS also
+               write to that RAM. Thus, to hold a value, this app must write the value
+               again. One write is not sufficient. A write at each frame here also
+               covers a reset, the startup, and a state load, with no extra code.
+               There is no event to miss, because the next frame corrects each change.
+
+               The cost is a few byte stores against the approximately 26,500
+               instructions that a frame already emulates.
+
+               psemu_settings_offsets_known guards this code. Thus this app makes no
+               change on a BIOS revision that nobody traced. This agrees with the
+               disabled menu items.
+
+               psemu_app_running also guards this code, because a write at each frame
+               is correct only while the BIOS shell owns that RAM. When the BIOS
+               dispatches an app from the card, those two bytes belong to the app. A
+               write to them 32 times each second then corrupts the app. With one
+               real trading-card app, this was sufficient to make the app reject the
+               PS1 save on the card and show its "ODD DATA" screen. That result is how
+               this project found the fault. The override starts again when the app
+               returns control.
+
+               The override also stops while a movie is active. The clock of the host
+               is not an input that a movie holds, thus a playback on a different day
+               desyncs. The RTC of the machine continues from the start state of the
+               movie instead. */
+            if (psemu_settings_offsets_known(ps) && settings.datetime_override == DATETIME_OVERRIDE_OS &&
+                !psemu_app_running(ps) && !movie_is_active(&movie)) {
+                SYSTEMTIME now;
+                GetLocalTime(&now);
+                /* In SYSTEMTIME, wDayOfWeek gives 0 for Sunday. The RTC field
+                   gives 1 for Sunday. psemu_set_datetime refuses the call while
+                   the BIOS programs the clock, and the next frame tries again. */
+                psemu_set_datetime(
+                    ps, now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond, (int)now.wDayOfWeek + 1);
+            }
+
+            if (!psemu_cpu_faulted(ps)) {
+                psemu_run(ps, 33000);
+            } else if (!cpu_faulted_reported) {
+                cpu_faulted_reported = 1;
+                fprintf(
+                    stderr, "psemu: CPU hit an unrecognized opcode and has stopped - this is a real emulator bug, "
+                            "not something you did. The game is frozen on its last good frame; please report this "
+                            "along with what you were doing right before it happened.\n");
+                write_diagnostic_report(ps, "cpu fault (unrecognized opcode)", frame, bios_path, app_path);
+            }
+
+            /* Moves the new TX edges of this frame onto the pipe.
+               It also sends each RX edge that arrived from the other instance after the last frame.
+               Those edges arrive in time for the psemu_run call of the next frame, which processes
+               them through ir_tick.
+               This is the same one-frame resolution, approximately 31ms, that each other input path
+               uses. The buttons are one example. See ir_link.h.
+               The status of ir_link can change here with no menu action: a peer connects, or the link
+               fails. Thus this code writes the title again at each change of the status text. */
+            {
+                const char *status_before = ir_link_status_text(&ir_link);
+                char status_before_copy[sizeof(((ir_link_t *)0)->status)];
+                snprintf(status_before_copy, sizeof(status_before_copy), "%s", status_before);
+                ir_link_pump(&ir_link, ps);
+                if (strcmp(status_before_copy, ir_link_status_text(&ir_link)) != 0) {
+                    refresh_title(&menu_ctx);
+                }
+            }
+
+            /* At a speed other than 100%, the frames and the audio device use different rates. The
+               queue then grows without a limit, or it becomes empty between two frames. Thus this
+               code drains the core at each speed, but it queues the samples only at 100%. */
+            int audio_in_real_time = !control.fast_forward && control.speed_index == EMU_SPEED_NORMAL_INDEX;
+            if (audio_dev != 0) {
+                uint32_t n = psemu_get_audio_samples(ps, audio_buf, sizeof(audio_buf) / sizeof(audio_buf[0]));
+                if (n > 0 && audio_in_real_time) {
+                    /* Options > Sound > Volume. This code reads the value at each frame,
+                       thus a change takes effect at the next frame. This code always
+                       drains the core, and it queues silence at 0%. If it did not queue
+                       the silence, the data in the buffer would continue to play, and the
+                       audio clock of this instance would become different from its
+                       frames.
+                       The speaker filter operates first. Thus the percentage stays a
+                       simple loudness control above the output of the speaker. It does not
+                       change how much the gain of the filter drives into the limiter of
+                       that filter. */
+                    apply_speaker_filter(&speaker_filter, audio_buf, n, settings.speaker_sim);
+                    apply_master_volume(audio_buf, n, clamp_master_volume(settings.master_volume));
+                    SDL_QueueAudio(audio_dev, audio_buf, n * sizeof(audio_buf[0]));
+                }
+            }
+
+            ran_frame = 1;
+        }
+        rewind_key_was_held = rewind_key_held;
+
+        /* Without a speed limit, this loop runs some thousand iterations each second. The screen,
+           the title, and write-back then update at most approximately 60 times each second. Each
+           frame still runs. */
+        int speed = control.fast_forward ? EMU_SPEED_UNLIMITED : EMU_SPEEDS[control.speed_index];
+        Uint32 now_ticks = SDL_GetTicks();
+        if (speed != EMU_SPEED_UNLIMITED || now_ticks - last_present_ticks >= 16u) {
+            last_present_ticks = now_ticks;
+            render_framebuffer(ps, pixels, pixel_rgba, bg_rgba, show_shadows, shadow_rgba);
+            SDL_UpdateTexture(texture, NULL, pixels, PSEMU_LCD_WIDTH * sizeof(uint32_t));
+            SDL_RenderClear(renderer);
+            SDL_RenderCopy(renderer, texture, NULL, NULL);
+            SDL_RenderPresent(renderer);
+            /* During a movie, write-back waits. See stop_movie. */
+            if (!movie_is_active(&movie)) {
+                content_writeback_poll(&content_writeback, ps);
+            }
+            refresh_title(&menu_ctx);
         }
 
-        render_framebuffer(ps, pixels, pixel_rgba, bg_rgba, show_shadows, shadow_rgba);
-        SDL_UpdateTexture(texture, NULL, pixels, PSEMU_LCD_WIDTH * sizeof(uint32_t));
-        SDL_RenderClear(renderer);
-        SDL_RenderCopy(renderer, texture, NULL, NULL);
-        SDL_RenderPresent(renderer);
-        content_writeback_poll(&content_writeback, ps);
-        SDL_Delay(31); /* ~32Hz, matching the real LCD refresh */
+        /* 31ms is approximately 32Hz, the refresh rate of the real LCD. Device > Speed divides
+           that wait. While paused, the loop waits 31ms for each iteration, at each speed. */
+        if (!ran_frame && !control.rewinding) {
+            SDL_Delay(31);
+        } else if (speed != EMU_SPEED_UNLIMITED) {
+            SDL_Delay((Uint32)(31 * 100 / speed));
+        }
         frame++;
     }
+
+    /* Write an active movie before the exit sequence below changes the machine. The end of the movie
+       also ends the wait of write-back (see stop_movie). */
+    stop_movie(&menu_ctx);
+    rewind_free(&rewind);
+    free(rewind_state);
 
     /* Simulate the power-off hold-save. The BIOS flash driver writes the app state to
        flash when it detects a sustained action-button press. Hold the button for the

@@ -39,10 +39,11 @@ jobs:
       # needs SDL2, and CMake skips that frontend with a warning when SDL2 is
       # absent. This workflow stays fast and needs no package step.
       #
-      # ONE TEST DOES NOT RUN HERE. content_writeback_selftest belongs to the
-      # desktop frontend, thus a build without SDL2 does not register it. This
-      # workflow runs 5 tests, and a build with SDL2 registers 6. The Windows
-      # release workflow builds with SDL2 and runs the full set.
+      # TWO TESTS DO NOT RUN HERE. content_writeback_selftest and movie_selftest
+      # belong to the desktop frontend, thus a build without SDL2 does not
+      # register them. This workflow runs 5 tests, and a build with SDL2
+      # registers 7. The Windows release workflow builds with SDL2 and runs the
+      # full set.
       #
       # The core, the tests, the tools, and the libretro core need no
       # dependency. The libretro core does fetch the libretro-common headers at

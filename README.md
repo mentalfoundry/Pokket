@@ -67,7 +67,7 @@ pk_timing_bench/         a homebrew memory-timing benchmark app (build source an
 
 The [build guide of the desktop frontend](docs/desktop_readme.md#building) gives the full build instructions: the prerequisites, and the steps for Windows, Linux, and macOS. The core, the tools, the tests, and the libretro core all build the same way. They need no dependencies except the dependencies in that guide.
 
-- [Desktop app](docs/desktop_readme.md): usage, building, and diagnostic reports.
+- [Desktop app](docs/desktop_readme.md): usage, speedrun and TAS tools, building, and diagnostic reports.
 - [Libretro core](docs/libretro_readme.md): usage and building. It has one extra step: it gets `libretro-common` at the first configure operation, and that step needs internet access.
 - [Web build](frontends/web/README.md): compiles the core to one JavaScript file with Emscripten.
 

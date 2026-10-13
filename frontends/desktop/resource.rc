@@ -37,22 +37,54 @@ BEGIN
             MENUITEM "Slot &2",         ID_FILE_LOAD_SLOT_BASE + 2
         END
         MENUITEM SEPARATOR
+        /* An input movie, for rerecording and for verification of a run.
+           See movie.h. Stop Movie and Read-Only are usable only while a movie
+           is active (see sync_menu_state). */
+        POPUP "&Movie"
+        BEGIN
+            MENUITEM "&Record Movie...",    ID_MOVIE_RECORD
+            MENUITEM "&Play Movie...",      ID_MOVIE_PLAY
+            MENUITEM "&Stop Movie",         ID_MOVIE_STOP
+            MENUITEM SEPARATOR
+            MENUITEM "Read-&Only",          ID_MOVIE_READ_ONLY
+        END
+        MENUITEM SEPARATOR
         MENUITEM "E&xit",               ID_FILE_EXIT
     END
-    POPUP "&IR Link"
+    /* The PocketStation itself: the control of its time (pause, frame advance,
+       speed, and rewind), and its IR port. One menu for both keeps the menu bar
+       on one line at the default window width. */
+    POPUP "&Device"
     BEGIN
-        /* The first pair is the local link, between two windows on this machine.
-           It uses one fixed pipe name, thus it needs no dialog and takes no
-           ellipsis. The second pair is the network link, which must ask for a
-           port or for the address of a peer. Disconnect ends a link of either
-           kind. */
-        MENUITEM "&Host Local Session", ID_IR_HOST
-        MENUITEM "&Connect Local Session", ID_IR_CONNECT
+        MENUITEM "&Pause",              ID_EMU_PAUSE
+        MENUITEM "&Frame Advance",      ID_EMU_FRAME_ADVANCE
         MENUITEM SEPARATOR
-        MENUITEM "Host Over &Network...", ID_IR_HOST_NET
-        MENUITEM "Connect Over Net&work...", ID_IR_CONNECT_NET
+        POPUP "&Speed"
+        BEGIN
+            MENUITEM "25%",             ID_EMU_SPEED_BASE + 0
+            MENUITEM "50%",             ID_EMU_SPEED_BASE + 1
+            MENUITEM "&Normal (100%)",  ID_EMU_SPEED_BASE + 2
+            MENUITEM "200%",            ID_EMU_SPEED_BASE + 3
+            MENUITEM "400%",            ID_EMU_SPEED_BASE + 4
+            MENUITEM "&Unlimited",      ID_EMU_SPEED_BASE + 5
+        END
+        MENUITEM "&Rewind",             ID_EMU_REWIND_ENABLE
         MENUITEM SEPARATOR
-        MENUITEM "&Disconnect", ID_IR_DISCONNECT
+        POPUP "&IR Link"
+        BEGIN
+            /* The first pair is the local link, between two windows on this
+               machine. It uses one fixed pipe name, thus it needs no dialog and
+               takes no ellipsis. The second pair is the network link, which must
+               ask for a port or for the address of a peer. Disconnect ends a link
+               of either kind. */
+            MENUITEM "&Host Local Session", ID_IR_HOST
+            MENUITEM "&Connect Local Session", ID_IR_CONNECT
+            MENUITEM SEPARATOR
+            MENUITEM "Host Over &Network...", ID_IR_HOST_NET
+            MENUITEM "Connect Over Net&work...", ID_IR_CONNECT_NET
+            MENUITEM SEPARATOR
+            MENUITEM "&Disconnect", ID_IR_DISCONNECT
+        END
     END
     POPUP "&Options"
     BEGIN
@@ -130,7 +162,7 @@ BEGIN
     END
 END
 
-/* One dialog for both network items of the IR Link menu. main.c gives it the
+/* One dialog for both network items of Device > IR Link. main.c gives it the
    caption and the label, because the host side asks for a port to listen on and
    the client side asks for the address of a peer. The field is wide enough for a
    host name with a port, and for an IPv6 address in brackets. */
@@ -205,52 +237,74 @@ BEGIN
     PUSHBUTTON      "Match to Screen Color", IDC_REMATCH, 14, 242, 100, 14
 END
 
-/* Rows are Up/Down/Left/Right/Fire/Debug Log/Reset/Save State/Load State,
-   matching IDC_REMAP_LABEL_BASE/IDC_REMAP_CHANGE_BASE's fixed +0..+8 order
-   in resource.h. The current-key label (e.g. "Up") is filled in
-   dynamically at WM_INITDIALOG, not here. */
-IDD_REMAP_CONTROLS DIALOGEX 0, 0, 190, 196
+/* The left column holds the PocketStation buttons and the general hotkeys:
+   Up/Down/Left/Right/Fire/Debug Log/Reset/Save State/Load State. The right
+   column holds the speedrun hotkeys: Pause/Frame Advance/Fast Forward/Rewind/
+   Movie Read-Only. Together they are the fixed +0..+13 order of
+   IDC_REMAP_LABEL_BASE/IDC_REMAP_CHANGE_BASE in resource.h. The current-key
+   label (e.g. "Up") is filled in dynamically at WM_INITDIALOG, not here. */
+IDD_REMAP_CONTROLS DIALOGEX 0, 0, 380, 196
 STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Remap Controls"
 FONT 8, "MS Shell Dlg"
 BEGIN
-    LTEXT           "Up:", -1, 7, 11, 40, 10
-    LTEXT           "", IDC_REMAP_LABEL_BASE + 0, 50, 11, 70, 10
-    PUSHBUTTON      "Change...", IDC_REMAP_CHANGE_BASE + 0, 125, 9, 58, 14
+    LTEXT           "Up:", -1, 7, 11, 52, 10
+    LTEXT           "", IDC_REMAP_LABEL_BASE + 0, 62, 11, 62, 10
+    PUSHBUTTON      "Change...", IDC_REMAP_CHANGE_BASE + 0, 131, 9, 52, 14
 
-    LTEXT           "Down:", -1, 7, 29, 40, 10
-    LTEXT           "", IDC_REMAP_LABEL_BASE + 1, 50, 29, 70, 10
-    PUSHBUTTON      "Change...", IDC_REMAP_CHANGE_BASE + 1, 125, 27, 58, 14
+    LTEXT           "Down:", -1, 7, 29, 52, 10
+    LTEXT           "", IDC_REMAP_LABEL_BASE + 1, 62, 29, 62, 10
+    PUSHBUTTON      "Change...", IDC_REMAP_CHANGE_BASE + 1, 131, 27, 52, 14
 
-    LTEXT           "Left:", -1, 7, 47, 40, 10
-    LTEXT           "", IDC_REMAP_LABEL_BASE + 2, 50, 47, 70, 10
-    PUSHBUTTON      "Change...", IDC_REMAP_CHANGE_BASE + 2, 125, 45, 58, 14
+    LTEXT           "Left:", -1, 7, 47, 52, 10
+    LTEXT           "", IDC_REMAP_LABEL_BASE + 2, 62, 47, 62, 10
+    PUSHBUTTON      "Change...", IDC_REMAP_CHANGE_BASE + 2, 131, 45, 52, 14
 
-    LTEXT           "Right:", -1, 7, 65, 40, 10
-    LTEXT           "", IDC_REMAP_LABEL_BASE + 3, 50, 65, 70, 10
-    PUSHBUTTON      "Change...", IDC_REMAP_CHANGE_BASE + 3, 125, 63, 58, 14
+    LTEXT           "Right:", -1, 7, 65, 52, 10
+    LTEXT           "", IDC_REMAP_LABEL_BASE + 3, 62, 65, 62, 10
+    PUSHBUTTON      "Change...", IDC_REMAP_CHANGE_BASE + 3, 131, 63, 52, 14
 
-    LTEXT           "Fire/Action:", -1, 7, 83, 40, 10
-    LTEXT           "", IDC_REMAP_LABEL_BASE + 4, 50, 83, 70, 10
-    PUSHBUTTON      "Change...", IDC_REMAP_CHANGE_BASE + 4, 125, 81, 58, 14
+    LTEXT           "Fire/Action:", -1, 7, 83, 52, 10
+    LTEXT           "", IDC_REMAP_LABEL_BASE + 4, 62, 83, 62, 10
+    PUSHBUTTON      "Change...", IDC_REMAP_CHANGE_BASE + 4, 131, 81, 52, 14
 
-    LTEXT           "Debug Log:", -1, 7, 101, 40, 10
-    LTEXT           "", IDC_REMAP_LABEL_BASE + 5, 50, 101, 70, 10
-    PUSHBUTTON      "Change...", IDC_REMAP_CHANGE_BASE + 5, 125, 99, 58, 14
+    LTEXT           "Debug Log:", -1, 7, 101, 52, 10
+    LTEXT           "", IDC_REMAP_LABEL_BASE + 5, 62, 101, 62, 10
+    PUSHBUTTON      "Change...", IDC_REMAP_CHANGE_BASE + 5, 131, 99, 52, 14
 
-    LTEXT           "Reset:", -1, 7, 119, 40, 10
-    LTEXT           "", IDC_REMAP_LABEL_BASE + 6, 50, 119, 70, 10
-    PUSHBUTTON      "Change...", IDC_REMAP_CHANGE_BASE + 6, 125, 117, 58, 14
+    LTEXT           "Reset:", -1, 7, 119, 52, 10
+    LTEXT           "", IDC_REMAP_LABEL_BASE + 6, 62, 119, 62, 10
+    PUSHBUTTON      "Change...", IDC_REMAP_CHANGE_BASE + 6, 131, 117, 52, 14
 
-    LTEXT           "Save State:", -1, 7, 137, 40, 10
-    LTEXT           "", IDC_REMAP_LABEL_BASE + 7, 50, 137, 70, 10
-    PUSHBUTTON      "Change...", IDC_REMAP_CHANGE_BASE + 7, 125, 135, 58, 14
+    LTEXT           "Save State:", -1, 7, 137, 52, 10
+    LTEXT           "", IDC_REMAP_LABEL_BASE + 7, 62, 137, 62, 10
+    PUSHBUTTON      "Change...", IDC_REMAP_CHANGE_BASE + 7, 131, 135, 52, 14
 
-    LTEXT           "Load State:", -1, 7, 155, 40, 10
-    LTEXT           "", IDC_REMAP_LABEL_BASE + 8, 50, 155, 70, 10
-    PUSHBUTTON      "Change...", IDC_REMAP_CHANGE_BASE + 8, 125, 153, 58, 14
+    LTEXT           "Load State:", -1, 7, 155, 52, 10
+    LTEXT           "", IDC_REMAP_LABEL_BASE + 8, 62, 155, 62, 10
+    PUSHBUTTON      "Change...", IDC_REMAP_CHANGE_BASE + 8, 131, 153, 52, 14
 
-    DEFPUSHBUTTON   "Close", IDOK, 66, 175, 50, 14
+    LTEXT           "Pause:", -1, 197, 11, 52, 10
+    LTEXT           "", IDC_REMAP_LABEL_BASE + 9, 252, 11, 62, 10
+    PUSHBUTTON      "Change...", IDC_REMAP_CHANGE_BASE + 9, 321, 9, 52, 14
+
+    LTEXT           "Frame Advance:", -1, 197, 29, 52, 10
+    LTEXT           "", IDC_REMAP_LABEL_BASE + 10, 252, 29, 62, 10
+    PUSHBUTTON      "Change...", IDC_REMAP_CHANGE_BASE + 10, 321, 27, 52, 14
+
+    LTEXT           "Fast Forward:", -1, 197, 47, 52, 10
+    LTEXT           "", IDC_REMAP_LABEL_BASE + 11, 252, 47, 62, 10
+    PUSHBUTTON      "Change...", IDC_REMAP_CHANGE_BASE + 11, 321, 45, 52, 14
+
+    LTEXT           "Rewind:", -1, 197, 65, 52, 10
+    LTEXT           "", IDC_REMAP_LABEL_BASE + 12, 252, 65, 62, 10
+    PUSHBUTTON      "Change...", IDC_REMAP_CHANGE_BASE + 12, 321, 63, 52, 14
+
+    LTEXT           "Read-Only:", -1, 197, 83, 52, 10
+    LTEXT           "", IDC_REMAP_LABEL_BASE + 13, 252, 83, 62, 10
+    PUSHBUTTON      "Change...", IDC_REMAP_CHANGE_BASE + 13, 321, 81, 52, 14
+
+    DEFPUSHBUTTON   "Close", IDOK, 165, 175, 50, 14
 END
 
 /* Purely informational - shown modeless (not via DialogBoxParam) while

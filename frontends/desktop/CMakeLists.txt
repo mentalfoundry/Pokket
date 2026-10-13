@@ -22,7 +22,7 @@ enable_language(RC)
 # alongside the SDL window by default. main() still gets a normal argc/argv
 # via SDL2::SDL2main's WinMain shim; pass --console to opt back into a
 # visible console for stderr diagnostics (see main.c).
-add_executable(pokket_desktop WIN32 main.c ir_link.c ir_transport.c ir_transport_pipe.c ir_transport_tcp.c content_writeback.c resource.rc)
+add_executable(pokket_desktop WIN32 main.c ir_link.c ir_transport.c ir_transport_pipe.c ir_transport_tcp.c content_writeback.c movie.c rewind.c resource.rc)
 target_compile_definitions(pokket_desktop PRIVATE POKKET_VERSION="${POKKET_VERSION_STRING}")
 # comctl32 - the About dialog's SysLink control (Help > About's clickable
 # repo link); shell32 - ShellExecuteA, to actually open it in a browser.
@@ -48,3 +48,11 @@ target_link_libraries(ir_link_selftest PRIVATE psemu ws2_32)
 add_executable(content_writeback_selftest content_writeback_selftest.c content_writeback.c)
 target_link_libraries(content_writeback_selftest PRIVATE psemu)
 add_test(NAME content_writeback_selftest COMMAND content_writeback_selftest)
+
+# The rerecording base: the movie file, the read-only and read-write modes, the timeline checks of a
+# state load, and the rewind buffer. With a BIOS dump in testdata/, it also plays a recorded movie in
+# a new machine and compares the two machines byte for byte. Without a dump it skips that one check.
+add_executable(movie_selftest movie_selftest.c movie.c rewind.c)
+target_compile_definitions(movie_selftest PRIVATE PSEMU_TESTDATA_DIR="${CMAKE_SOURCE_DIR}/testdata")
+target_link_libraries(movie_selftest PRIVATE psemu)
+add_test(NAME movie_selftest COMMAND movie_selftest)

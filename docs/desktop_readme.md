@@ -22,7 +22,7 @@ pokket.exe .\bios.bin .\samplememcard.mcd
 - **If you start the .exe with a double click**, and give no command line, the app uses the last BIOS path from an earlier run, if one exists (see `settings.cfg` below). If no such path exists, the app uses `bios.bin` next to the executable. For the app or card, the app always looks for `memcard.mcd` next to the executable. The app never keeps that path.
 - A start with no BIOS, no app, no card, or an invalid file does not stop the app. The window opens. Use **File > Load BIOS...** or **File > Open App/Card...** to select a file.
 - By default, this app operates with no console window. Thus its diagnostic `stderr` output goes to no visible location. Supply `--console` to get a console window, or `--no-console` to prevent one. The app keeps either flag in `settings.cfg` for later starts.
-- **Controls:** the arrow keys give Up, Down, Left, and Right. **Z** gives the Fire (Action) button by default. **F12** writes a diagnostic report. You can change each of these keys, and also **Reset** (F8), **Save State** (F5), and **Load State** (F9), from **Options > Remap Controls...**. If you select a key that a different row uses, that row loses the key; two actions cannot share one key. A row with no key shows "(unbound)", and it does nothing until you give it a key. You can change the window size freely. **Options > Window Size > Native Size (1x)** and **Double Size (2x)** return the window to a known size.
+- **Controls:** the arrow keys give Up, Down, Left, and Right. **Z** gives the Fire (Action) button by default. **F12** writes a diagnostic report. You can change each of these keys, and also **Reset** (F8), **Save State** (F5), **Load State** (F9), and the speedrun keys (see [Speedrun and TAS tools](#speedrun-and-tas-tools)), from **Options > Remap Controls...**. If you select a key that a different row uses, that row loses the key; two actions cannot share one key. A row with no key shows "(unbound)", and it does nothing until you give it a key. You can change the window size freely. **Options > Window Size > Native Size (1x)** and **Double Size (2x)** return the window to a known size.
 - **Save states:** **File > Save State** and **File > Load State** each give three slots. The keyboard operates the **Quick Slot** only: **F5** saves, and **F9** loads. You can change both keys. Only the menu can reach **Slot 1** and **Slot 2**. Thus an incorrect hotkey cannot write over a state in one of those slots. Each slot is a separate file next to the executable, with the name of the loaded app or card. For a card with the name `mycard.mcd`, the files are `mycard.mcd.sav` for the quick slot, and `mycard.mcd_1.sav` and `mycard.mcd_2.sav` for slots 1 and 2. A state records its source app or card, and it refuses a load onto a different one. That test continues to operate after an app saves to the card; see [Save write-back](#save-write-back). Save states are also **not portable between versions of this emulator**; see the note at the top of the [main README](../README.md).
 - **Options > Colors** changes the appearance of the LCD: **Classic** (the default, which is a muted LCD ink-on-sage appearance), **Light** (black on white), **Dark** (white on black), or **Advanced Colors...** for each other appearance. A scheme is three colors: the active pixel, the background, and the sprite shadow. Each item above sets all three colors.
 - **Advanced Colors...** asks for one color, the screen color (the background). It then calculates the other two colors: they use the same hue, with sufficient contrast for legibility. A live preview shows the three colors together. This dialog also has the **sprite shadows** control. That control adds a small one-row "ghosting" trail, which approximates the slow pixel response of a real passive-matrix LCD. Open **Custom Colors** in that dialog to set all three colors manually, or select **Match to Screen Color** to return to calculated colors. No control in the Custom Colors group calculates a color by itself. Only **Choose Screen Color...** and **Match to Screen Color** write over a color that you set manually.
@@ -50,10 +50,69 @@ pokket.exe .\bios.bin .\samplememcard.mcd
 
   An override of the date and time also means that the emulated clock continues to advance while the app is closed. That behavior is nearer to a real PocketStation, whose clock operates from the battery at each time.
 - **Help > About Pokket...** shows the version and a link to this repository.
-- **IR Link** connects two copies of this app over IR. This is the same as two physical PocketStation units that a user holds together for local multiplayer. See [IR Link](#ir-link) below.
+- **Speedrun and TAS tools:** pause, frame advance, fast forward, slow motion, rewind, and input movies with rerecording. See [Speedrun and TAS tools](#speedrun-and-tas-tools) below.
+- **Device > IR Link** connects two copies of this app over IR. This is the same as two physical PocketStation units that a user holds together for local multiplayer. See [IR Link](#ir-link) below.
 - **Save write-back** keeps the file that you opened in agreement with the changes that an app makes. Thus the progress of an app continues after you close the window. An edit that an app makes to the save of the PS1 game also continues. The app keeps a backup of the original file. See [Save write-back](#save-write-back) below.
 
 A single-app load (`.pss` or `.mcs`) boots through the real BIOS menu, the same way as a full memory card. See [How to reach a single loaded app](../README.md#how-to-reach-a-single-loaded-app) in the main README for the button sequence.
+
+## Speedrun and TAS tools
+
+The **Device** menu and **File > Movie** hold the usual tools of a speedrun emulator. The status of these tools is in the window title, because the screen is the 32x32 LCD of the PocketStation. One frame is 1/32 of a second, the refresh rate of the LCD.
+
+| Action | Default key | Function |
+|---|---|---|
+| Pause | P | Stops the emulation. Press it again to continue. |
+| Frame Advance | F | Pauses, then runs one frame. Hold the key to repeat, after approximately 0.4 seconds. |
+| Fast Forward | Tab, held | Runs with no speed limit while you hold the key. |
+| Rewind | Backspace, held | Goes back one frame for each frame of time while you hold the key. Hold Fast Forward also to rewind faster. |
+| Movie Read-Only | Q | Changes the active movie between read-only and read-write. |
+
+You can change each key in **Options > Remap Controls...**. If a key that you already use for a different action is the default key of one of these actions, that action starts with no key.
+
+- **Device > Speed** sets 25%, 50%, Normal (100%), 200%, 400%, or Unlimited. The app does not keep this setting. Each start is at Normal speed. **The sound plays only at Normal speed**, and not during Fast Forward.
+- **Device > Rewind** turns the rewind history on or off. The app keeps this setting in `settings.cfg`, and it is on by default. The history holds a maximum of 10 minutes. It keeps only the bytes that change from one frame to the next, thus one minute usually costs some megabytes. The maximum is 64MB. A state load, the start of a movie, and a load of a different BIOS, app, or card clear the history.
+- **During Frame Advance, a frame gets exactly the keys that you hold.** During normal play, a short press continues for a minimum of 2 frames, because the BIOS ignores a shorter press (see `BUTTON_MIN_PRESS_FRAMES` in `main.c`). With Frame Advance, a press of 1 frame is possible.
+
+### Movies
+
+A movie is a file (`.pkm`) that holds the input of each frame: the five buttons and each reset. A playback of the movie gives the same run again, frame for frame. The emulator is deterministic, thus the same input always gives the same result.
+
+- **File > Movie > Record Movie...** asks for a file name, then asks whether to start from power-on. **Yes** resets the PocketStation, then starts the recording. A movie for a speedrun site usually must start this way. **No** starts from the current state, which is useful to practice one part of a run.
+- **File > Movie > Play Movie...** plays a movie in read-only mode. The movie must be for the app or card that is open now: the app does the same test as for a save state. If the movie was recorded with a different BIOS dump, the app gives a warning, because the playback will probably desync.
+- **File > Movie > Stop Movie** ends the movie and writes the file. The app also writes the movie at each Save State during the recording, and when you close the window.
+- The movie holds its own start state. That state includes the card and the hardware ID. Thus a playback does not depend on the card file on your disk, or on your hardware ID setting.
+
+The title shows the movie:
+
+| Title | Meaning |
+|---|---|
+| `Rec 1234 rr5 ..L.F` | Recording, at frame 1234, with 5 rerecords. The last input was Left and Fire. |
+| `Play 1200/4000 rr31 RO .D...` | Playback of frame 1200 of 4000, read-only. The last input was Down. |
+| `End 4012/4000 rr31 RO .....` | The playback is complete. Your keys operate the PocketStation again, and the movie does not record them. |
+
+The input is always in the order Up, Down, Left, Right, Fire, with `.` for a button that is not pressed.
+
+### Rerecording
+
+A save state that you make during a movie also holds the position and the inputs of the movie. A load of that state during the same movie operates in one of two modes:
+
+- **Read-write** (the mode of a recording): the movie goes back to the frame of the state, the inputs after that frame are removed, and the recording continues from that frame. The rerecord count increases by one.
+- **Read-only** (the mode of a playback): the playback moves to the frame of the state, and the movie does not change. The state must agree with the inputs of the movie. A state from a different branch of the movie is refused.
+
+A rewind during a read-write movie operates the same way as a state load: the inputs after the new frame are removed, and each hold of the Rewind key counts one rerecord.
+
+To continue a movie: play it, press **Q** to change to read-write, and then load a state, or let the playback get to its end. A read-write playback continues as a recording at the end of the movie.
+
+While a movie is active, the app refuses a state that you did not save during that movie.
+
+### What a movie cannot hold
+
+A movie holds only the buttons and the resets. Thus, while a movie is active:
+
+- **Device > IR Link** and **Options > Edit Hardware ID...** are not available.
+- **Options > Date/Time Override** stops. The clock of your computer is not an input that a movie holds, thus a playback on a different day would desync. The clock of the PocketStation continues from the start state of the movie.
+- **Save write-back waits.** A movie loads its own start state, which holds its own card. The app does not write that card, or any change to it, to your file. When the movie stops, the card in memory is still the card of the movie, the same as after **Load State**. If an app then saves, the app writes that card to your file (see [Save write-back](#save-write-back)). To continue with your own card after a movie, open your card again with **File > Open App/Card...**.
 
 ## IR Link
 
@@ -61,17 +120,17 @@ Two separate copies of `pokket.exe` can exchange real IR signals, on one machine
 
 **To connect two copies on one machine:**
 1. Start `pokket.exe` two times. For example, execute it one time, and then start it again with a double click, or start a second copy from a terminal. You then have two separate windows.
-2. In one window, select **IR Link > Host Local Session**. The title bar shows "IR - Waiting...".
-3. In the other window, select **IR Link > Connect Local Session**. The title bar shows "IR - Connecting..." until the two copies find each other, which is usually immediate. Both title bars then show "IR - Connected".
+2. In one window, select **Device > IR Link > Host Local Session**. The title bar shows "IR - Waiting...".
+3. In the other window, select **Device > IR Link > Connect Local Session**. The title bar shows "IR - Connecting..." until the two copies find each other, which is usually immediate. Both title bars then show "IR - Connected".
 4. Use each copy normally. The IR port operations of the loaded app now reach the other copy.
-5. **IR Link > Disconnect** ends the session, from either side, at any time.
+5. **Device > IR Link > Disconnect** ends the session, from either side, at any time.
 
 **To connect two machines:**
-1. On the machine that hosts, select **IR Link > Host Over Network...**. It asks for a port, and it offers 27411. Select OK. The title bar shows "IR - Waiting...".
+1. On the machine that hosts, select **Device > IR Link > Host Over Network...**. It asks for a port, and it offers 27411. Select OK. The title bar shows "IR - Waiting...".
 2. Give the other person the address of that machine and that port. Windows asks to permit the program on the network at the first host operation. The link needs that permission.
-3. On the other machine, select **IR Link > Connect Over Network...**. Give the address as `host:port`, for example `192.168.1.40:27411`, and select OK.
+3. On the other machine, select **Device > IR Link > Connect Over Network...**. Give the address as `host:port`, for example `192.168.1.40:27411`, and select OK.
 4. Both title bars show "IR - Synchronizing..." for a moment, and then "IR - Connected". The step between them measures the difference between the two clocks of the machines, which the link needs before it carries any signal.
-5. Use each copy normally, and **IR Link > Disconnect** ends the session from either side.
+5. Use each copy normally, and **Device > IR Link > Disconnect** ends the session from either side.
 
 **Important data:**
 - The two local items, Host Local Session and Connect Local Session, always use the same known local connection. They do not ask for a name. Only one connected pair can be active on a machine at one time.
@@ -80,7 +139,8 @@ Two separate copies of `pokket.exe` can exchange real IR signals, on one machine
 - The network link accepts a connection from any address that can reach the port. There is no password. Use it on a network that you trust, or forward the port only while a session is active.
 - A network link adds the time of the network to the IR timing. On a local network that addition is small. Across the internet it is not, and no test of this project measures whether a real app tolerates it. Please report the result if you try it.
 - An address can be an IPv4 address, an IPv6 address in brackets such as `[fe80::1]:27411`, or a host name. The machine that hosts accepts both address families on one port.
-- Three actions end an active IR link automatically: a load of a different BIOS, app, or card; a press of **Reset**; and a **Load State** operation. All three actions reset the IR state of the emulator. Thus a link that stays connected through one of them loses synchronization with the other copy. Connect again through the **IR Link** menu after such an action, if you still need the link.
+- Four actions end an active IR link automatically: a load of a different BIOS, app, or card; a press of **Reset**; a **Load State** operation; and a **Rewind** step. All four actions reset the IR state of the emulator. Thus a link that stays connected through one of them loses synchronization with the other copy. Connect again through **Device > IR Link** after such an action, if you still need the link.
+- A link is not available while a movie is active (see [What a movie cannot hold](#what-a-movie-cannot-hold)). The IR timing also assumes real time, thus a link can fail at a speed other than Normal.
 - The IR timing is an inference. No test against real hardware confirms it. Two details in particular are inferences: the quantity of filtering that this emulator applies to a noisy signal, and the data that a receiving app reads during a transfer. No trace of an app in the test set of this project uses IR. If an app operates differently over the IR link than on real hardware, please report that condition. See [hardware-notes.md](hardware-notes.md#ir--ir-link) for the technical detail.
 
 ## Save write-back
@@ -96,7 +156,8 @@ Both kinds go to the same storage, thus this app writes both back. Without this 
 
 - **Before the first change to your file, this app copies the original file next to it, as `<yourfile>.bak`.** Examples are `mycard.mcd.bak` and `myapp.mcs.bak`. This app writes that copy one time, and it never writes over the copy. Thus the copy always holds the file exactly as it was before this emulator changed it. If a fault occurs, that copy is your method to recover: give it the name of the original file.
 - This app writes the file approximately one second after the end of a change. It writes the file again when you exit, when you open a different file, and when you press Reset. Each write goes to a temporary file, which then replaces the original file. Thus an interrupted write cannot leave a truncated save.
-- **Load State does not write your file.** A save state contains its own copy of the card. Thus a load is not an edit to keep; it becomes the new start point. This app then writes the subsequent changes of the app to the file.
+- **Load State does not write your file.** A save state contains its own copy of the card. Thus a load is not an edit to keep; it becomes the new start point. This app then writes the subsequent changes of the app to the file. A rewind step is the same as a load.
+- **While a movie is active, this app does not write your file.** See [What a movie cannot hold](#what-a-movie-cannot-hold).
 - Over the IR link, each of the two copies writes its own file independently. That behavior is correct: this app saves both sides of a trade.
 - This app reports each write on stderr. Execute the app with `--console` to see the reports. A failed write also gives a message, and it does not change the file on disk.
 

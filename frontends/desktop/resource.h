@@ -12,7 +12,7 @@
 #define IDD_REMAP_CONTROLS 205
 #define IDD_CAPTURE_PROMPT 206
 #define IDD_ABOUT 207
-/* IR Link > Host Over Network... and Connect Over Network... both use this one
+/* Device > IR Link > Host Over Network... and Connect Over Network... both use this one
    dialog. It holds one address field. The caption and the label text come from
    main.c, because the host side asks for a port to listen on and the client side
    asks for the address of a peer. */
@@ -27,19 +27,8 @@
 #define IDC_SHADOW_CHOOSE 1007
 /* 1008 was IDC_SHADOW_RESET, which belonged to the retired IDD_SHADOW_COLOR. */
 #define IDC_CAPTURE_PROMPT_TEXT 1009
-/* IDC_REMAP_LABEL_BASE and IDC_REMAP_CHANGE_BASE each reserve 9 consecutive
-   IDs, one per remappable action.
-   The action order is fixed: Up, Down, Left, Right, Fire, Create-Debug-Log,
-   Reset, Quick-Save-State, Quick-Load-State.
-   See button_scancodes in main.c for this order.
-   IDC_REMAP_LABEL_BASE+i shows binding i's current key name.
-   IDC_REMAP_CHANGE_BASE+i is that row's "Change..." button.
-   IDC_ABOUT_LINK and IDC_ABOUT_VERSION moved up from 1025/1026, originally
-   to make room for the 6th IDC_REMAP_CHANGE_BASE slot (1025).
-   +0..+8 (1020-1028) still fits below IDC_ABOUT_LINK (1030), so no further
-   renumbering was needed for the 3 additional rows. */
-#define IDC_REMAP_LABEL_BASE 1010
-#define IDC_REMAP_CHANGE_BASE 1020
+/* 1010-1028 were IDC_REMAP_LABEL_BASE and IDC_REMAP_CHANGE_BASE, when the
+   dialog had 9 rows. The two ranges are now at the end of this file. */
 #define IDC_ABOUT_LINK 1030
 #define IDC_ABOUT_VERSION 1031
 #define IDC_ABOUT_LICENSE_LINK 1032
@@ -85,7 +74,7 @@
 #define ID_IR_HOST 1119
 #define ID_IR_CONNECT 1120
 #define ID_IR_DISCONNECT 1121
-/* IR Link > Host Over Network... and Connect Over Network..., the TCP pair of
+/* Device > IR Link > Host Over Network... and Connect Over Network..., the TCP pair of
    ID_IR_HOST and ID_IR_CONNECT above. The two local items keep one fixed pipe
    name and need no dialog. These two ask for an address, thus they carry an
    ellipsis. ID_IR_DISCONNECT ends a link of either kind. */
@@ -127,5 +116,30 @@
 #define ID_FILE_SAVE_SLOT_LAST 1145
 #define ID_FILE_LOAD_SLOT_BASE 1146
 #define ID_FILE_LOAD_SLOT_LAST 1148
+/* The Device menu: Pause, Frame Advance, Speed, and Rewind. Its IR Link
+   submenu uses the ID_IR_* values above. Speed is a radio group in one
+   contiguous range, in the order of EMU_SPEEDS in main.c: 25%, 50%, 100%,
+   200%, 400%, Unlimited. */
+#define ID_EMU_PAUSE 1151
+#define ID_EMU_FRAME_ADVANCE 1152
+#define ID_EMU_REWIND_ENABLE 1153
+#define ID_EMU_SPEED_BASE 1154
+#define ID_EMU_SPEED_LAST 1159
+/* File > Movie. */
+#define ID_MOVIE_RECORD 1160
+#define ID_MOVIE_PLAY 1161
+#define ID_MOVIE_STOP 1162
+#define ID_MOVIE_READ_ONLY 1163
+
+/* IDC_REMAP_LABEL_BASE and IDC_REMAP_CHANGE_BASE each reserve 20 consecutive
+   IDs. 14 are in use, one for each remappable action.
+   The action order is fixed: Up, Down, Left, Right, Fire, Create-Debug-Log,
+   Reset, Quick-Save-State, Quick-Load-State, Pause, Frame-Advance,
+   Fast-Forward, Rewind, Movie-Read-Only.
+   See button_scancodes in main.c for this order.
+   IDC_REMAP_LABEL_BASE+i shows the current key name of binding i.
+   IDC_REMAP_CHANGE_BASE+i is the "Change..." button of that row. */
+#define IDC_REMAP_LABEL_BASE 1200
+#define IDC_REMAP_CHANGE_BASE 1220
 
 #endif
