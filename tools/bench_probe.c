@@ -75,7 +75,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "usage: %s <bios.bin> <app.mcs> [frames] [pages] [probe]\n", argv[0]);
         fprintf(stderr, "  pages: screen number to page to after launch (0 = leave wherever it lands)\n");
         fprintf(stderr, "  probe: with pages = 29, the probe to select and run with Down\n");
-        fprintf(stderr, "         with pages = 13, any value runs the CLK stop test, and ACTION wakes the CPU\n");
+        fprintf(stderr, "         with pages = 13, 1 runs the masked mode (Up), and each other value runs the stop test (Down). ACTION wakes the CPU\n");
         return 1;
     }
     bios = read_file(argv[1], &bios_size);
@@ -156,7 +156,8 @@ int main(int argc, char **argv) {
         int k;
         psemu_bus_write32(&ps->bus, WRAM_PROBE_SEL, (uint32_t)probe);
         for (k = 0; k < 10; k++) {
-            psemu_set_buttons(ps, PSEMU_BUTTON_DOWN);
+            /* On screen 13, probe 1 selects the masked mode, which Up starts. */
+            psemu_set_buttons(ps, (pages == 13 && probe == 1) ? PSEMU_BUTTON_UP : PSEMU_BUTTON_DOWN);
             psemu_run(ps, 33000u);
         }
         for (k = 0; k < 20; k++) {
@@ -181,6 +182,9 @@ int main(int argc, char **argv) {
                 psemu_bus_read32(&ps->bus, 0x2C4u), psemu_bus_read32(&ps->bus, 0x684u),
                 psemu_bus_read32(&ps->bus, 0x688u), psemu_bus_read32(&ps->bus, 0x68Cu),
                 psemu_bus_read32(&ps->bus, 0x690u));
+            printf("screen13 masked rows @0x698: 0x%08X 0x%08X 0x%08X 0x%08X\n", psemu_bus_read32(&ps->bus, 0x698u),
+                psemu_bus_read32(&ps->bus, 0x69Cu), psemu_bus_read32(&ps->bus, 0x6A0u),
+                psemu_bus_read32(&ps->bus, 0x6A4u));
         }
     }
 

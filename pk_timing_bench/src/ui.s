@@ -486,26 +486,19 @@ pb_check_right:
     ldr r6, =WRAM_BUTTON_DEBOUNCE
     ldr r0, [r6]
 
-    @ Down, on the stop-test screen only, runs the test (see stop_test_phased in
-    @ cpu.s). Down is otherwise unused outside the exit prompt, so this
-    @ costs no existing binding. Edge-triggered against the previous frame's
-    @ bits, the same way the Left/Right checks below are.
+    @ On the stop-test screen, Down runs the stop test, and Up runs its masked
+    @ mode. See stop_buttons in cpu.s.
+    @ A stop test does not return until ACTION wakes the CPU. Thus sample the
+    @ live button bits again, so that the debounce state below holds the
+    @ buttons of NOW. If not, the next poll reads the waking button as a new
+    @ press.
     cmp r4, #SCREEN_STOP_TEST
     bne pb_check_com
-    tst r5, #8
+    bl stop_buttons
+    cmp r1, #0
     beq pb_check_right_real
-    tst r0, #8
-    bne pb_check_right_real
-    bl stop_test_phased
-    @ stop_test_phased does not return until something wakes the CPU, and that is
-    @ usually a different button than the Down that started it. Re-sample the
-    @ live button bits so the debounce state below reflects what is held NOW.
-    @ Without this, pb_store would record the stale pre-stop bits and the very
-    @ next poll would read the waking button as a fresh press - navigating
-    @ straight off the results screen the test just filled in.
     ldr r6, =INTC_STATUS
     ldr r5, [r6]
-    mov r1, #1
     b pb_store
 
     @ Screen 15: Up shows the next stored capture, Down arms the unattended run.

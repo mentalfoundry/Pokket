@@ -83,9 +83,24 @@ The seconds row compares directly, because the emulated RTC keeps true 1Hz time.
 | Source | Row 1 (seconds) | Row 2 (IRQs before / after) | Row 3 (RTC seconds) | Row 4 (Timer1 before / after) | Date |
 |---|---|---|---|---|---|
 | Real hardware, a stop of 12 seconds | `0x0000000C` | `0x00010001` | `0x2335FF35` | `0x037A037A` | 2026-10-16 |
+| Real hardware, a second run, after the screen acknowledges Timer1 before the unmask | `0x0000000C` | `0x00010001` | `0x3143FF43` | `0x03850385` | 2026-10-16 |
 | This emulator, a stop of 13 seconds | `0x0000000D` | `0x00000000` | `0x19FFFF32` | `0x03DB03DA` | 2026-10-16 |
 
-Row 4 shows that Timer1 does not advance during the stop on real hardware. Before the store, Timer1 counted approximately 109 of its 1000 ticks, thus neither interrupt of row 2 is an expiry. The interrupt after the store arrives in the second of the wake. In that run, the screen did not acknowledge Timer1 before the unmask, thus the interrupt before the store can be a request that an earlier expiry latched. The screen now acknowledges the buttons and Timer1 before the unmask. A second unit counted 1 or 2 interrupts in total, on each of five runs of the earlier version, which showed only the total.
+
+**The masked mode (UP).** Each row is `CH00NNNN`: the Timer1 control, the Timer1 bit of the hold register, and the Timer1 count.
+
+| Source | Row 1 (before the test) | Row 2 (after the arm) | Row 3 (before the store) | Row 4 (after the wake) | Date |
+|---|---|---|---|---|---|
+| Real hardware, after a launch | `0x0000034F` | `0x600003E7` | `0x600003DA` | `0x6100021A` | 2026-10-16 |
+| Real hardware, after a launch | `0x0000034F` | `0x600003E7` | `0x600003DA` | `0x6100022F` | 2026-10-16 |
+| Real hardware, after a probe of screen 29 | `0x000001DB` | `0x600003E7` | `0x600003DB` | `0x61000279` | 2026-10-16 |
+| This emulator | `0x0000035B` | `0x600003E7` | `0x600003DB` | `0x600003DA` | 2026-10-16 |
+
+Across each stop, the Timer1 count passes zero one time, and a request is in the hold register after the wake. That is 1448, 1427, and 1354 ticks at /512, thus Timer1 runs for 173 to 185 ms near each stop of approximately 12 seconds. In this emulator, Timer1 does not advance.
+
+The build of 2026-08-03 (`a1ec1f9`), on the same unit, on 2026-10-16: `0x0000000B`, `0x00000001`, `0x00000017`. The code of screen 13 in that build is the same as in the build that the second unit used. Thus the build does not cause the result of `0x00000000` on 2026-08-03.
+
+In the stop test, row 4 gives the same count before and after the stop. That row reads the count in the first instruction after the store. The masked mode reads it in the second instruction, and it gives the advance. Thus the CPU can execute one instruction after the store before it stops. No test confirms that. Before the store, Timer1 counted approximately 109 of its 1000 ticks, thus the interrupt before the store is not an expiry. The second run acknowledges the buttons and Timer1 before the unmask, and it also counts that interrupt. Thus it is not a request that an earlier expiry latched, and no measurement explains it. The interrupt after the store arrives in the second of the wake, and the advance of Timer1 near the stop gives it. A second unit counted 1 or 2 interrupts in total, on each of five runs of the earlier version, which showed only the total.
 
 ## Screen 14: the two interrupt-line rates of the RTC
 

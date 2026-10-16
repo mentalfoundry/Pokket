@@ -371,3 +371,7 @@
 .equ WRAM_STOP_RTC,          0x68C
 @ Timer1 COUNT just before the store (bits 16 to 31), and just after the wake (bits 0 to 15).
 .equ WRAM_STOP_T1,           0x690
+@ The mode of the last run of screen 13: 0 = the stop test (Down), 1 = the masked mode (Up).
+.equ WRAM_STOP_MODE,         0x694
+@ 4 words: the four rows of the masked mode. See stop_test_masked in cpu.s.
+.equ WRAM_STOP_MASKED,       0x698
