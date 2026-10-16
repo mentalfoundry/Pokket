@@ -354,8 +354,20 @@
 .equ WRAM_PROBE_T1,          0x640
 @ 8 words: the WRAM copy of the probe target. See probe_pad in cpu.s.
 .equ WRAM_PROBE_PAD,         0x650
-.equ PROBE_COUNT,            34
+.equ PROBE_COUNT,            35
 @ The watchdog: Timer1 at /32 with this period expires after (period + 1) * 32 cycles, which is
 @ approximately 8ms at CLK_MODE 7.
 .equ PROBE_WATCHDOG_PERIOD,  999
 .equ PROBE_WATCHDOG_CTRL,    0x5
+
+@ Screen 13: the CLK stop test with a separate count for each phase. See stop_test_phased in cpu.s.
+@ 0 before the store to CLK control, and 1 after it.
+.equ WRAM_STOP_PHASE,        0x680
+@ The Timer1 interrupts before the store, and after the store.
+.equ WRAM_STOP_BEFORE,       0x684
+.equ WRAM_STOP_AFTER,        0x688
+@ 4 bytes of RTC seconds (BCD). Byte 3: before the store. Byte 2: at the first interrupt after the
+@ store. Byte 1: at the second interrupt after the store. Byte 0: after the wake. FF = no value.
+.equ WRAM_STOP_RTC,          0x68C
+@ Timer1 COUNT just before the store (bits 16 to 31), and just after the wake (bits 0 to 15).
+.equ WRAM_STOP_T1,           0x690

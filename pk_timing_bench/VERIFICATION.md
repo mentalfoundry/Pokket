@@ -10,7 +10,7 @@ See [README.md](README.md) for the meaning of each screen, for the build method,
 
 **Real hardware:** a retail PocketStation unit, with the values read directly off the 32 by 32 LCD. The date column in each table gives the run that supplied the value.
 
-**This emulator:** one run of `tools/bench_probe.c` on 2026-08-06, against the committed `pk_timing_bench.mcs` and a real J-110 BIOS dump. That tool reads the raw results out of the WRAM result block. Thus it needs no person to read hex digits off the screen. Screens 13 and 14 are the exception. See their sections below.
+**This emulator:** one run of `tools/bench_probe.c` on 2026-08-06, against the committed `pk_timing_bench.mcs` and a real J-110 BIOS dump. That tool reads the raw results out of the WRAM result block. Thus it needs no person to read hex digits off the screen. Screens 8 to 11 come from a run on 2026-10-16, after the correction that `count` ignores writes. Screens 13 and 14 are the exception. See their sections below.
 
 **Run-to-run jitter** on the same unit is ±1 in the last hex digit. Treat a difference of 1 as agreement. Treat a larger difference as a real difference.
 
@@ -46,10 +46,10 @@ The sanity check for this screen is `(full_before − full_after) mod 65536`. Bo
 |---|---|---|---|---|---|---|
 | 6 | the Timer2 period behavior | `0x00003F90` | `0x00003F87` | `0x00003F91` | `0x00003F88` | 2026-07-31 |
 | 7 | the cost of one interrupt | `0x00002BF2` | `0x00002D56` | `0x00002BF2` | `0x00002D4E` | 2026-07-31 |
-| 8 | the expiry-to-arm latency over IRQ | `0x00000FE4` | `0x000003F8` | `0x00001060` | `0x000003F8` | 2026-07-31 |
-| 9 | the write cost of `IRDA_DATA` against WRAM | `0x00002BF2` | `0x00002849` | `0x00002BF2` | `0x00002849` | 2026-07-31 |
-| 10 | the expiry-to-arm latency over FIQ | `0x00000FE4` | `0x000003F8` | `0x00001080` | `0x000003F8` | 2026-07-31 |
-| 11 | the same latency, with the full dispatch chain | `0x00000FE4` | `0x000003F8` | `0x00001103` | `0x000003F8` | 2026-07-31 |
+| 8 | the expiry-to-arm latency over IRQ | `0x00000FE4` | `0x000003F8` | `0x00000FE4` | `0x000003F8` | 2026-07-31 |
+| 9 | the write cost of `IRDA_DATA` against WRAM | `0x00002BF2` | `0x00002849` | `0x00002BF2` | `0x00002848` | 2026-07-31 |
+| 10 | the expiry-to-arm latency over FIQ | `0x00000FE4` | `0x000003F8` | `0x00000FE4` | `0x000003F8` | 2026-07-31 |
+| 11 | the same latency, with the full dispatch chain | `0x00000FE4` | `0x000003F8` | `0x00000FE3` | `0x000003F8` | 2026-07-31 |
 
 The control row of screens 8, 10, and 11 is the armed period, which is a constant that the app writes. That value is `0x3F8`, which is 1016. It is identical on both sides by construction.
 
@@ -59,9 +59,9 @@ The control row of screens 8, 10, and 11 is the armed period, which is a constan
 
 | Screen | Hardware effective period | Hardware latency | Emulator effective period | Emulator latency |
 |---|---|---|---|---|
-| 8 | 1017 | **0 ticks** | 1048 | 31 ticks |
-| 10 | 1017 | **0 ticks** | 1056 | 39 ticks |
-| 11 | 1017 | **0 ticks** | 1088.8 | 71.8 ticks |
+| 8 | 1017 | **0 ticks** | 1017 | 0 ticks |
+| 10 | 1017 | **0 ticks** | 1017 | 0 ticks |
+| 11 | 1017 | **0 ticks** | 1016.75 | 0 ticks, within the jitter |
 
 The period is 1017, and not 1016, because a timer that is armed with P runs P+1 ticks. See screen 6.
 
@@ -261,6 +261,7 @@ Probes 6 to 9, E, and 11 give values that depend on the addresses of the code in
 | 1F (bit 4 set, bits 12 to 15 not all 1) | `1F010000 00000010 00000010 00000010` | the same |
 | 20 (Supervisor mode: mode bit 4 of the SPSR) | `20010000 00000015 00000010 000000D3` | the same |
 | 21 (Supervisor mode: mode 03 written to the CPSR) | `21010000 60000093 60000093 60000093` | the same |
+| 22 (writes to COUNT of Timer2) | `22010000 00000555 00007FFF 00007FFF` | the same |
 
 The same unit, with a build of three blocks (`make BLOCKS=3`), on 2026-10-16. In that build, `0x02004000` is a target in the third block: `MOV r1,PC`, and then `BX r3`.
 
@@ -291,7 +292,7 @@ What these values show:
 - **The 16-bit Timer0 mask correction holds on real hardware.** Screens 3 and 4 give clean, small values. Neither one shows the `0xFFFFxxxx` wraparound artifact.
 - **A timer that is armed with period P expires each P+1 ticks.** Screen 6 measures exactly 1 extra tick for each reload, at two different periods, and the extra time is the same absolute value at both. Thus a rate error and a divisor error are not the cause. `core/src/timer.c` has this correction, and three timer values in `tests/cpu_test.c` were corrected with it.
 - **The interrupt entry and dispatch cost of this emulator is essentially correct.** Screen 7 gives approximately 98 raw cycles on hardware, against approximately 96 raw cycles here.
-- **A timer expiry reaches the arm operation of its handler with 0 added ticks.** Screens 8, 10, and 11 give that same result over IRQ, over FIQ, and with the full realistic dispatch chain of the real transmit handler. Thus Timer2 reloads in hardware at the moment that it expires, independently of the time when software services the interrupt. The arm write must only occur before the *next* natural expiry.
+- **A write of `period` and `count` to a running timer does not start the period again.** Screens 8, 10, and 11 give 0 added ticks, over IRQ, over FIQ, and with the full dispatch chain of the real transmit handler. Probe 22 of screen 29 gives the reason: `count` ignores writes. Thus the timer continues from its reload at the expiry. These screens do not measure the dispatch cost.
 - **The write cost of `IRDA_DATA` is not special.** Screen 9 agrees with this emulator bit for bit. The general 2-cycle "I/O" cost that this emulator gives that register is already correct.
 - **Bit 0 of `CLK control` (`0x0B000004`) stops the CPU, and the timers stop with it.** Screen 13 makes that store alone, with no other part of the power-down sequence of the real app. Ten seconds of RTC time passed, and there were zero Timer1 interrupts across those seconds, with Timer1 armed and unmasked for the full time. No quantity of tracing of the real app can give that separation.
 - **`CLK control` does not read back the value that software wrote to it.** Screen 13 returns `0x17`, which is the `CLK_MODE` value of the app with the steady bit ORed in. One consequence: this screen cannot answer whether the stop bit clears itself, because there is no readable stop status. The run does show that the CPU started again and continued. Thus the stop does not persist across a wake.
@@ -301,7 +302,6 @@ What these values show:
 
 ## Known differences between this emulator and real hardware
 
-- **This emulator applies too much cost to a dispatch that reaches an arm operation.** Screens 8, 10, and 11 give 31, 39, and 71.8 ticks here, against 0 ticks on hardware. The cost grows with the complexity of the dispatch, and real hardware shows no such growth. This is a real cycle-cost fault. See "Known open questions and unconfirmed behavior" in [docs/hardware-notes.md](../docs/hardware-notes.md).
 - **The paused RTC rate of this emulator is 0.1% under hardware.** Screen 14 gives `0x0F44` here, against `0x0F3F` on hardware. Integer rounding in `RTC_TICK_CYCLES_PAUSED` causes that difference.
 - **The interrupt cost of this emulator is 2.2% under hardware.** See screen 7 above.
 - The remaining differences are 1 tick or less, which is inside the run-to-run jitter of the hardware itself.

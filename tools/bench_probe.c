@@ -75,6 +75,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "usage: %s <bios.bin> <app.mcs> [frames] [pages] [probe]\n", argv[0]);
         fprintf(stderr, "  pages: screen number to page to after launch (0 = leave wherever it lands)\n");
         fprintf(stderr, "  probe: with pages = 29, the probe to select and run with Down\n");
+        fprintf(stderr, "         with pages = 13, any value runs the CLK stop test, and Up wakes the CPU\n");
         return 1;
     }
     bios = read_file(argv[1], &bios_size);
@@ -161,6 +162,25 @@ int main(int argc, char **argv) {
         for (k = 0; k < 20; k++) {
             psemu_set_buttons(ps, 0);
             psemu_run(ps, 33000u);
+        }
+        /* On screen 13, Down runs the CLK stop test, and the CPU stays stopped until a button wakes
+           it. Wait, then press Up to wake it. */
+        if (pages == 13) {
+            for (k = 0; k < 400; k++) {
+                psemu_run(ps, 33000u);
+            }
+            for (k = 0; k < 10; k++) {
+                psemu_set_buttons(ps, PSEMU_BUTTON_UP);
+                psemu_run(ps, 33000u);
+            }
+            for (k = 0; k < 20; k++) {
+                psemu_set_buttons(ps, 0);
+                psemu_run(ps, 33000u);
+            }
+            printf("screen13 stop rows @0x2C4/0x684: seconds=0x%08X irqs=0x%04X%04X rtc=0x%08X t1=0x%08X\n",
+                psemu_bus_read32(&ps->bus, 0x2C4u), psemu_bus_read32(&ps->bus, 0x684u),
+                psemu_bus_read32(&ps->bus, 0x688u), psemu_bus_read32(&ps->bus, 0x68Cu),
+                psemu_bus_read32(&ps->bus, 0x690u));
         }
     }
 

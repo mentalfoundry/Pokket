@@ -312,30 +312,9 @@ rs_rtc_rates_screen:
     b rs_done
 
 rs_stop_test_screen:
-    @ The CLK stop/standby test. Three rows, top to bottom:
-    @   seconds of RTC time that passed across the single store under test
-    @   Timer1 interrupts counted across that same store
-    @   CLK control read back afterwards
-    @ All zeros means it has not been run yet. Press Down to run it. See
-    @ run_stop_test in experiments.s, and ../README.md for how to read the
-    @ three numbers together.
-    ldr r5, =WRAM_STOP_SECONDS
-    ldr r0, [r5]
-    mov r1, #8
-    mov r2, #0
-    bl draw_hex_u32
-
-    ldr r5, =WRAM_STOP_IRQCOUNT
-    ldr r0, [r5]
-    mov r1, #16
-    mov r2, #0
-    bl draw_hex_u32
-
-    ldr r5, =WRAM_STOP_READBACK
-    ldr r0, [r5]
-    mov r1, #24
-    mov r2, #0
-    bl draw_hex_u32
+    @ The CLK stop test. See draw_stop_rows and stop_test_phased in cpu.s,
+    @ and ../README.md for how to read the four rows.
+    bl draw_stop_rows
     b rs_done
 
 rs_com_screen:
@@ -507,8 +486,8 @@ pb_check_right:
     ldr r6, =WRAM_BUTTON_DEBOUNCE
     ldr r0, [r6]
 
-    @ Down, on the stop-test screen only, runs the test (see run_stop_test in
-    @ experiments.s). Down is otherwise unused outside the exit prompt, so this
+    @ Down, on the stop-test screen only, runs the test (see stop_test_phased in
+    @ cpu.s). Down is otherwise unused outside the exit prompt, so this
     @ costs no existing binding. Edge-triggered against the previous frame's
     @ bits, the same way the Left/Right checks below are.
     cmp r4, #SCREEN_STOP_TEST
@@ -517,8 +496,8 @@ pb_check_right:
     beq pb_check_right_real
     tst r0, #8
     bne pb_check_right_real
-    bl run_stop_test
-    @ run_stop_test does not return until something wakes the CPU, and that is
+    bl stop_test_phased
+    @ stop_test_phased does not return until something wakes the CPU, and that is
     @ usually a different button than the Down that started it. Re-sample the
     @ live button bits so the debounce state below reflects what is held NOW.
     @ Without this, pb_store would record the stale pre-stop bits and the very

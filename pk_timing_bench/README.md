@@ -159,10 +159,10 @@ The value is 1017, and not 1016, because a timer that is armed with P runs P+1 t
 
 | | top row | effective period | latency |
 |---|---|---|---|
-| This emulator | `0x1060` | 1048 | 31 ticks |
+| This emulator | `0x0FE4` | 1017 | 0 ticks |
 | Real hardware (measured 2026-07-31, see [VERIFICATION.md](VERIFICATION.md)) | `0x0FE4` | 1017 | **0 ticks** |
 
-**Real hardware removes this hypothesis.** The latency from the expiry to the arm operation measures 0 ticks on real hardware. It is not the approximately 184 ticks that the hypothesis needs. The 31-tick figure of this emulator, for the same experiment, is closer to the removed hypothesis than real hardware is. With screens 6 and 7, each of the three general interrupt-path and timer-path candidates for the approximately 184-tick shortfall is now removed. See "Timing measurements on real hardware" in [docs/hardware-notes.md](../docs/hardware-notes.md) for the full table of screen results.
+**Real hardware removes this hypothesis.** The latency from the expiry to the arm operation measures 0 ticks on real hardware. It is not the approximately 184 ticks that the hypothesis needs. The handler of this screen arms the timer again with a write of `period` and `count`, and `count` ignores writes (screen 29, probe 22). Thus the timer continues from its reload at the expiry. This screen does not test the re-arm method of the real app, which disables the timer and enables it again. The enable edge loads `count` from `period`, thus that method starts the period again. See "Timing measurements on real hardware" in [docs/hardware-notes.md](../docs/hardware-notes.md) for the full table of screen results.
 
 **Screen 9: does an MMIO write to `IRDA_DATA` cost more than a plain WRAM store?** The top row is a loop of **30000** stores to `IRDA_DATA` (`0x0C800004`). The bottom row is the same loop with the store to a WRAM scratch address. This screen uses the same two-row test and control layout as screens 1 to 4. It uses the same method that screen 2 uses for `FLASH_CTRL` against WRAM, but it times a store and not a load.
 
@@ -172,10 +172,10 @@ This emulator gives `IRDA_DATA` the same general 2-cycle "I/O" data-access rate 
 
 | | test (`IRDA_DATA`) | control (WRAM) |
 |---|---|---|
-| This emulator | `0x2BF2` | `0x2849` |
+| This emulator | `0x2BF2` | `0x2848` |
 | Real hardware (measured 2026-07-31, see [VERIFICATION.md](VERIFICATION.md)) | `0x2BF2` | `0x2849` |
 
-**Real hardware agrees with this emulator exactly, bit for bit.** Thus the write cost of `IRDA_DATA` is not the missing time either. With screens 6 to 8, each general memory-access candidate and interrupt-path candidate that this project can measure is now measured, and each one agrees with real hardware.
+**Real hardware agrees with this emulator, within the jitter of 1 tick.** Thus the write cost of `IRDA_DATA` is not the missing time either. With screens 6 to 8, each general memory-access candidate and interrupt-path candidate that this project can measure is now measured, and each one agrees with real hardware.
 
 **Screen 10: is the latency from the expiry to the arm operation different over FIQ than over IRQ?** This screen uses the same layout and the same arithmetic as screen 8. It uses Timer2, which routes to FIQ, in place of Timer1, which routes to IRQ.
 
@@ -185,23 +185,23 @@ A disassembly trace of the *real* IR transmit handler, and not a synthetic one, 
 
 | | top row | effective period | latency |
 |---|---|---|---|
-| This emulator | `0x1080` | 1056 | 39 ticks |
+| This emulator | `0x0FE4` | 1017 | 0 ticks |
 | Real hardware (measured 2026-07-31, see [VERIFICATION.md](VERIFICATION.md)) | `0x0FE4` | 1017 | **0 ticks** |
 
-**On real hardware, FIQ costs the same as IRQ.** The pair `0x0FE4` and `0x03F8` is the exact raw pair that screen 8 read for IRQ. The 39-tick figure of this emulator is higher than the 31-tick IRQ figure of screen 8, for the same synthetic shape. That difference is a small inaccuracy of this emulator. It is not evidence of an overhead that is specific to FIQ, because real hardware shows none. With screens 6 to 9, each general memory-access cost and interrupt-path cost that this project can measure now agrees with real hardware. See "Timing measurements on real hardware" in [docs/hardware-notes.md](../docs/hardware-notes.md) for the full table of screen results.
+**On real hardware, FIQ costs the same as IRQ.** The pair `0x0FE4` and `0x03F8` is the exact raw pair that screen 8 read for IRQ. With screens 6 to 9, each general memory-access cost and interrupt-path cost that this project can measure now agrees with real hardware. See "Timing measurements on real hardware" in [docs/hardware-notes.md](../docs/hardware-notes.md) for the full table of screen results.
 
 **Screen 11: what does the FULL dispatch chain of the real transmit handler cost?** This screen measures more than a minimal arm operation. It uses the same layout and the same arithmetic as screens 8 and 10.
 
-Screens 8 and 10 both measured a *minimal* arm operation. That operation is a minimal handler, one interrupt, a write to two timer registers, and a return. Both gave 0 ticks on real hardware. But a disassembly trace of the real transmit handler shows that its actual dispatch is not minimal. That handler acknowledges its own interrupt sources. It then calls through a jump table, with the INTC bit as its index. It then calls a nested subroutine, which reads a state flag. It then calls a second subroutine, which changes from ARM to Thumb with an interworking `BX`. It arms Timer2 again after those steps. A direct measurement in this emulator gives a steady-state cost of 128 to 160 Timer2 ticks. `tools/ir_probe.c` made that measurement, and not `pk_timing_bench`. It timed that real dispatch sequence across a real transmit burst of the serial-carrying app. That cost is most of the 184-tick value of the app. It is much more than the approximately 0 to 39 ticks that a minimal arm operation gives.
+Screens 8 and 10 both measured a *minimal* arm operation. That operation is a minimal handler, one interrupt, a write to two timer registers, and a return. Both gave 0 ticks on real hardware. But a disassembly trace of the real transmit handler shows that its actual dispatch is not minimal. That handler acknowledges its own interrupt sources. It then calls through a jump table, with the INTC bit as its index. It then calls a nested subroutine, which reads a state flag. It then calls a second subroutine, which changes from ARM to Thumb with an interworking `BX`. It arms Timer2 again after those steps. A direct measurement in this emulator gives a steady-state cost of 128 to 160 Timer2 ticks. `tools/ir_probe.c` made that measurement, and not `pk_timing_bench`. It timed that real dispatch sequence across a real transmit burst of the serial-carrying app. That cost is most of the 184-tick value of the app.
 
 This screen reproduces that same shape as a real `pk_timing_bench` experiment. That shape is an acknowledge, a nested ARM call, an ARM-to-Thumb transition, and then the arm operation. Thus a person can measure it on real hardware, the same direct way as screens 8 and 10. The measurement is not only possible in the emulator. This screen is original homebrew code, and not a copy. Thus it is not byte-for-byte identical to the real transmit handler, and an exact match to 128 to 160 ticks is not expected.
 
 | | top row | effective period | latency |
 |---|---|---|---|
-| This emulator | `0x1103` | 1088.8 | 71.8 ticks |
+| This emulator | `0x0FE3` | 1016.75 | 0 ticks, within the jitter |
 | Real hardware (measured 2026-07-31, see [VERIFICATION.md](VERIFICATION.md)) | `0x0FE4` | 1017 | **0 ticks** |
 
-**Real hardware agrees with screens 8 and 10 exactly, bit for bit, a third time.** Real hardware gives 0 added latency, even with the full realistic dispatch chain in the handler and not a minimal arm operation. This result does more than remove one more candidate. It disproves the theory that all three screens test, which gives the next period of a re-armed timer as a period that starts only when its handler reaches the arm operation. The simplest remaining explanation: Timer2 reloads in hardware at the moment that it expires, independently of the time when software services the interrupt. That behavior needs one condition. The arm write must occur before the *next* natural expiry. Here, that write always occurs in time, with a large margin. Thus the 184-tick figure of the app is very probably not a latency compensation at all. See "Timing measurements on real hardware" in [docs/hardware-notes.md](../docs/hardware-notes.md), and the open question about the meaning of that figure in "Known open questions and unconfirmed behavior".
+**Real hardware agrees with screens 8 and 10 exactly, bit for bit, a third time.** Real hardware gives 0 added ticks, also with the full dispatch chain in the handler. Probe 22 of screen 29 gives the mechanism: `count` ignores writes. The handler writes `period` and `count` to a running timer, thus the timer continues from its reload at the expiry, and the arm write does not start a new period. Thus screens 8, 10, and 11 do not measure the dispatch cost, and they do not test the re-arm method of the real app, which disables Timer2 and enables it again. See "Timing measurements on real hardware" in [docs/hardware-notes.md](../docs/hardware-notes.md), and the open question about the `184` figure in "Known open questions and unconfirmed behavior".
 
 ### Screen 14: the two interrupt-line rates of the RTC
 
@@ -243,21 +243,22 @@ Each other screen here reports a number that it measured at startup. This screen
 
 **The real-hardware result confirms the inference.** With a wait of approximately 10 seconds, the top row read `0x0000000A`, and the middle row read `0x00000000`. Thus bit 0 of this register stops the CPU, and the timers stop with it. Timer1 was armed and unmasked for the full ten seconds, and it counted zero interrupts. That second part matters as much as the first. A wake on each asserted interrupt is not a stop at all, because a running timer asserts again in microseconds. See [VERIFICATION.md](VERIFICATION.md).
 
-**What it does.** It registers an interrupt handler. It arms Timer1 slowly, at approximately 8Hz. It unmasks the buttons and Timer1. It draws a solid bar across the middle of the screen. It then makes one 32-bit store of `1` to `0x0B000004`. Each step after that store runs only when the CPU runs again. This screen leaves the LCD **on** deliberately, which is different from the sequence of the real app. Thus the result is readable.
+**What it does.** It registers an interrupt handler. It arms Timer1 slowly, at approximately 8Hz. It unmasks the buttons and Timer1. It draws a solid bar across the middle of the screen. It then makes one 32-bit store of `1` to `0x0B000004`. Each step after that store runs only when the CPU runs again. This screen leaves the LCD **on** deliberately, which is different from the sequence of the real app. Thus the result is readable. The handler counts the Timer1 interrupts before the store and after the store separately. See `stop_test_phased` in [`src/cpu.s`](src/cpu.s).
 
 **What appears.** If the clock really stops, the bar is the last thing that this screen draws, and it stays on the screen until a button press. If the store does nothing, the result screen replaces the bar too fast to see.
 
-**Three rows of results**, from the top to the bottom:
+**Four rows of results**, from the top to the bottom:
 
 | row | meaning |
 |---|---|
-| top | the whole seconds of RTC time that passed across the store |
-| middle | the Timer1 interrupts counted across the store. The buttons are excluded. |
-| bottom | the value that `0x0B000004` reads back afterwards |
+| 1 | the whole seconds of RTC time that passed across the store |
+| 2 | the Timer1 interrupts before the store (the high 4 digits), and after the store (the low 4 digits). The CPU handles each interrupt after the store when it runs again. The buttons are excluded. |
+| 3 | RTC seconds (BCD), one byte each, from the left: before the store, at the first Timer1 interrupt after the store, at the second Timer1 interrupt after the store, and after the wake. `FF` means that no such interrupt occurred. |
+| 4 | the Timer1 count just before the store (the high 4 digits), and just after the wake (the low 4 digits). If Timer1 stops with the CPU, the two values are almost the same. |
 
 **How to read them together.** Wait several seconds before a button press wakes the device. Thus the top row is unambiguous:
 
-| top (seconds) | middle (timer IRQs) | conclusion |
+| row 1 (seconds) | row 2 (timer IRQs, both halves) | conclusion |
 |---|---|---|
 | several | 0 | **The CPU stopped, and the timers stopped with it.** This is the row that real hardware gives, and it is the model of this emulator. |
 | several | large | The CPU stopped, but the timers continued and they did not wake it. Thus the wake logic of this emulator is incorrect. |
@@ -266,9 +267,11 @@ Each other screen here reports a number that it measured at startup. This screen
 
 If the screen changes **with no button press**, then a source that is not a button wakes the CPU. The RTC is the most probable source, because this test does not mask its interrupt. The real app does mask that interrupt. No run has met this condition. Thus the question is still open.
 
-**The bottom row is not a stop status.** Real hardware returned `0x17`, which is the `CLK_MODE` value that this app sets, with the steady bit (`0x10`) ORed in. Thus both words of this register read back as `CLK_MODE`, and `+0x4` does not read back the value that software wrote to it. `clk_read8` in `core/src/clk.c` now models that behavior. One consequence: this screen cannot show whether the stop bit clears itself, because there is no readable stop status. The run does show that the CPU started again and continued. Thus the stop does not persist across a wake.
+**The value that `0x0B000004` reads back is not a stop status.** This screen keeps that value in `WRAM_STOP_READBACK`, and it does not show it. Real hardware returned `0x17`, which is the `CLK_MODE` value that this app sets, with the steady bit (`0x10`) ORed in. Thus both words of this register read back as `CLK_MODE`, and `+0x4` does not read back the value that software wrote to it. `clk_read8` in `core/src/clk.c` now models that behavior. One consequence: this screen cannot show whether the stop bit clears itself, because there is no readable stop status. The run does show that the CPU started again and continued. Thus the stop does not persist across a wake.
 
-**The control run in this emulator** used a stop of five seconds, and it gave top `0x00000005` and middle `0x00000000`. The seconds row compares directly against hardware, because the emulated RTC keeps true 1Hz time. Thus that row must agree with the wall-clock time of the wait, on either side. That run came before the correction to `clk_read8`, thus its readback row is out of date. See [VERIFICATION.md](VERIFICATION.md).
+**A second unit counted 1 or 2 Timer1 interrupts across the store**, on each of five runs, with the earlier version of this screen. That version showed only the total. Timer1 expires approximately each 128ms. Thus that unit ran Timer1 for approximately 128ms to 256ms near the stop, and not for the full stop. Rows 2 to 4 show where that time is: before the store, at the stop, or at the wake. See [VERIFICATION.md](VERIFICATION.md).
+
+**The control run in this emulator** used a stop of 14 seconds, through `tools/bench_probe.c`. It gave row 1 `0x0000000E`, row 2 `0x00000000`, row 3 `0x18FFFF32`, and row 4 `0x03DB03DA`: no interrupt, and Timer1 stopped. The seconds row compares directly against hardware, because the emulated RTC keeps true 1Hz time. Thus that row must agree with the wall-clock time of the wait, on either side.
 
 **Recovery.** If the CPU stops and nothing wakes it, the device needs its physical reset button. Nothing in this test writes flash, thus that is the full cost.
 
@@ -464,8 +467,10 @@ This screen runs nothing when it is drawn. **UP** selects the next probe, and **
 | 15 | `MSR CPSR,Rm` with three shifts: `ASR #1` of `80000000`, `ROR #4` of `00000005`, and `RRX` of `20000000` with C = 1. See `probe_msr_shifts` in `src/cpu.s` | rows 2 to 4: the CPSR after each word. A shift gives `C`, `5`, and `9` in the flags |
 | 16 | row 2: a correct `MSR CPSR_f` with `5F000000`. Row 3: `MSR CPSR_f,#50000000` with bits 12 to 15 clear. See `probe_msr_other` in `src/cpu.s` | row 2 shows if the CPSR keeps bits 24 to 27. Row 3 shows if the immediate form ignores bits 12 to 15 |
 | 17 to 1A, 1D, 1E | one word in the encoding space of `BX`, in WRAM, with r0 = a target: `E12FF150`, `E12FFF30`, `E12F0010`, `E12FFF70`, `E120FF10`, and `E12AFF10`. See `probe_bx_space` in `src/cpu.s` | row 2: 1 if the word branched to r0. Row 3: LR minus the word, or `EEEEEEEE` if LR did not change. Row 4: the CPSR |
-| 1B, 1C, 20, 21 | words in Supervisor mode. The probe writes its own handler to the SWI slot of the kernel, and it executes SWI. The handler keeps the SPSR, executes the words, and writes the SPSR back. See `probe_priv_1b`, `probe_priv_1c`, `probe_priv_20`, and `probe_priv_21` in `src/cpu.s` | rows 2 to 4: the CPSR or the SPSR after each word |
+| 1B, 1C, 20 | words in Supervisor mode. The probe writes its own handler to the SWI slot of the kernel, and it executes SWI. The handler keeps the SPSR, executes the words, and writes the SPSR back. See `probe_priv_1b`, `probe_priv_1c`, and `probe_priv_20` in `src/cpu.s` | rows 2 to 4: the CPSR or the SPSR after each word |
 | 1F | `E12F0010`, `E12F1010`, and `E12FE110`, with a value in Rm that an `MSR` writes to the flags. See `probe_msr_bit4` in `src/cpu.s` | rows 2 to 4: the CPSR after each word |
+| 21 | in Supervisor mode: a write of mode 03, the 26-bit Supervisor mode, to the CPSR. See `probe_priv_21` in `src/cpu.s` | rows 2 to 4: the CPSR before the write, immediately after it, and after the old value is back |
+| 22 | writes to COUNT of Timer2. See `probe_count_write` in `src/cpu.s` | row 2: COUNT of a stopped timer after a write of `0ABC`, from `0555`. Row 3: COUNT of a running timer immediately after a write of `0ABC`, from `7FFF`. Row 4: PERIOD after that write. A COUNT that ignores writes gives approximately `0555` and `7FFF` |
 
 The word at the target is `MOV r1,PC`, and each other word near the target is `BX r3`, which returns to the app. Probes 3 to 5 show how each memory region answers a word read at an address 2 above a word boundary. A difference between FLASH1 and WRAM in probes 6 to D then points to the memory, and not to the CPU.
 

@@ -748,6 +748,7 @@ und_thumb_insn:
 @      CPSR after one word. See probe_msr_bit4.
 @  20  in Supervisor mode: the mode bits that the SPSR keeps. See probe_priv_20.
 @  21  in Supervisor mode: a write of the 26-bit mode 03 to the CPSR. See probe_priv_21.
+@  22  writes to the COUNT register of Timer2. See probe_count_write.
 @ In probes 0 and 6 to D, the word at the target is MOV r1,PC, and each other word of probe_pad is
 @ BX r3. r3 holds the address of probe_pc_back. If the probe returns, row 2 is r1 minus the aligned
 @ target: 8 if R15 was aligned, A if not, and 0 if MOV r1,PC did not execute.
@@ -972,6 +973,7 @@ probe_table:
     .word probe_msr_bit4        @ 1F
     .word probe_priv_20         @ 20
     .word probe_priv_21         @ 21
+    .word probe_count_write     @ 22
 
 probe_aligned:
     ldr r4, =probe_pad + 4
@@ -1380,6 +1382,46 @@ probe_msr_bit4:
     b probe_finish
     .ltorg
 
+@ Probe 22. Writes to COUNT (+4) of Timer2. trap_run masks the interrupt of Timer2, and Timer1 is the
+@ watchdog. The probe keeps PERIOD and CONTROL of Timer2, and it writes them back.
+@   Row 2: Timer2 stopped, with COUNT = 0555 from the enable edge. COUNT after a write of 0ABC.
+@   Row 3: Timer2 running at /512, with COUNT = 7FFF from the enable edge. COUNT immediately after
+@          a write of 0ABC.
+@   Row 4: PERIOD after the write of row 3. PERIOD is 7FFF before it.
+probe_count_write:
+    adr r1, 1f
+    ldr r0, =WRAM_PROBE_TARGET
+    str r1, [r0]
+    ldr r4, =TIMER2_BASE
+    ldr r5, [r4]
+    ldr r6, [r4, #8]
+    mov r0, #0
+    str r0, [r4, #8]
+    ldr r0, =0x0555
+    str r0, [r4]
+    mov r0, #6                  @ /512, enable: COUNT = PERIOD
+    str r0, [r4, #8]
+    mov r0, #0
+    str r0, [r4, #8]
+    ldr r0, =0x0ABC
+1:  str r0, [r4, #4]
+    ldr r1, [r4, #4]
+    ldr r0, =0x7FFF
+    str r0, [r4]
+    mov r0, #6
+    str r0, [r4, #8]
+    ldr r0, =0x0ABC
+    str r0, [r4, #4]
+    ldr r2, [r4, #4]
+    ldr r3, [r4]
+    mov r0, #0
+    str r0, [r4, #8]
+    str r5, [r4]
+    str r6, [r4, #8]
+    mov r0, #1
+    b probe_finish
+    .ltorg
+
 @ The IRQ return address is the address of the interrupted instruction + 4.
 probe_watchdog:
     adr r4, 1f
@@ -1533,6 +1575,213 @@ probe_fetch_pad:
 @ The FLASH1 data of probe 3: the bytes 11 22 33 84 55 66 77 88.
 probe_flash_data:
     .word 0x84332211, 0x88776655
+
+
+@ =============================================================================================
+@ Screen 13: does bit 0 of CLK control (0x0B000004) stop the CPU and the timers?
+@
+@ This is the test of run_stop_test in experiments.s, with a separate count for each phase. Timer1
+@ runs at /512 with period STOP_TIMER_PERIOD, thus it expires approximately each 128ms. A store of 1
+@ to CLK control stops the CPU, and a button press wakes it. A unit that ran Timer1 for a short time
+@ near the stop counted 1 or 2 interrupts there. These rows show when those interrupts occur:
+@   Row 1: the seconds of RTC time across the store.
+@   Row 2: bits 16 to 31: the Timer1 interrupts before the store. Bits 0 to 15: the Timer1 interrupts
+@          after the store. The CPU handles each of those after the wake.
+@   Row 3: RTC seconds (BCD), one byte each: before the store, at the first and at the second Timer1
+@          interrupt after the store, and after the wake. FF = no such interrupt.
+@   Row 4: Timer1 COUNT just before the store (bits 16 to 31), and just after the wake (bits 0 to 15).
+@          If Timer1 stops with the CPU, the two values are almost the same.
+
+@ redraw_screen calls this function on screen 13. Draws the four rows at rows 7, 13, 19, and 25.
+    .global draw_stop_rows
+draw_stop_rows:
+    push {r4, r5, r6, lr}
+    ldr r4, =WRAM_STOP_SECONDS
+    ldr r0, [r4]
+    mov r1, #7
+    mov r2, #0
+    bl draw_hex_u32
+    ldr r4, =WRAM_STOP_BEFORE
+    ldr r0, [r4]
+    ldr r4, =WRAM_STOP_AFTER
+    ldr r1, [r4]
+    mov r1, r1, lsl #16
+    orr r0, r0, r1
+    mov r0, r0, ror #16
+    mov r1, #13
+    mov r2, #0
+    bl draw_hex_u32
+    ldr r4, =WRAM_STOP_RTC
+    ldr r0, [r4]
+    mov r1, #19
+    mov r2, #0
+    bl draw_hex_u32
+    ldr r4, =WRAM_STOP_T1
+    ldr r0, [r4]
+    mov r1, #25
+    mov r2, #0
+    bl draw_hex_u32
+    pop {r4, r5, r6, lr}
+    bx lr
+    .ltorg
+
+@ poll_buttons calls this function at a press of Down on screen 13. It does not return until a
+@ button wakes the CPU. Keeps r4 to r8.
+    .global stop_test_phased
+stop_test_phased:
+    push {r4, r5, r6, r7, r8, lr}
+    mov r0, #0
+    ldr r1, =WRAM_STOP_PHASE
+    str r0, [r1]
+    ldr r1, =WRAM_STOP_BEFORE
+    str r0, [r1]
+    ldr r1, =WRAM_STOP_AFTER
+    str r0, [r1]
+    ldr r1, =WRAM_STOP_T1
+    str r0, [r1]
+    mvn r0, #0
+    ldr r1, =WRAM_STOP_RTC
+    str r0, [r1]
+
+    ldr r4, =TIMER1_BASE                @ keep Timer1
+    ldr r5, [r4]
+    ldr r6, [r4, #4]
+    ldr r7, [r4, #8]
+
+    ldr r0, =stop_irq_handler           @ install the handler before the unmask
+    adr lr, 1f
+    ldr r1, =register_irq_handler
+    bx r1
+1:  mov r0, #0                          @ arm Timer1
+    str r0, [r4, #8]
+    ldr r0, =STOP_TIMER_PERIOD
+    str r0, [r4]
+    mov r0, #STOP_TIMER_CTRL
+    str r0, [r4, #8]
+
+    ldr r0, =INTC_ENABLE                @ unmask the buttons and Timer1
+    ldr r1, =(INT_BUTTON_BITS | INT_TIMER1_BIT)
+    str r1, [r0]
+
+    @ A bar across the middle of the screen. It stays on the LCD while the CPU is stopped.
+    mov r0, #14
+    mov r1, #0
+    mov r2, #31
+    bl draw_hline
+    mov r0, #15
+    mov r1, #0
+    mov r2, #31
+    bl draw_hline
+    mov r0, #16
+    mov r1, #0
+    mov r2, #31
+    bl draw_hline
+
+    ldr r0, =RTC_TIME_ADDR              @ the seconds before the store
+    ldr r0, [r0]
+    and r0, r0, #0xFF
+    ldr r1, =WRAM_STOP_SECONDS
+    str r0, [r1]
+    ldr r1, =WRAM_STOP_RTC
+    strb r0, [r1, #3]
+
+    ldr r0, [r4, #4]                    @ Timer1 COUNT before the store
+    mov r0, r0, lsl #16
+    ldr r1, =WRAM_STOP_T1
+    str r0, [r1]
+
+    ldr r2, =WRAM_STOP_PHASE
+    mov r3, #1
+    ldr r0, =CLK_CONTROL_ADDR
+    mov r1, #1
+    str r3, [r2]                        @ phase 1
+    str r1, [r0]                        @ the store under test
+
+    @ The CPU runs again here. Keep the values first.
+    ldr r0, [r4, #4]                    @ Timer1 COUNT after the wake
+    mov r0, r0, lsl #16
+    mov r0, r0, lsr #16
+    ldr r1, =WRAM_STOP_T1
+    ldr r2, [r1]
+    orr r2, r2, r0
+    str r2, [r1]
+
+    ldr r0, =RTC_TIME_ADDR              @ the seconds after the wake
+    ldr r0, [r0]
+    and r8, r0, #0xFF
+    ldr r1, =WRAM_STOP_RTC
+    strb r8, [r1]
+
+    ldr r0, =CLK_CONTROL_ADDR
+    ldr r2, [r0]
+    ldr r0, =WRAM_STOP_READBACK
+    str r2, [r0]
+
+    ldr r0, =INTC_MASK                  @ mask each source
+    mvn r2, #0
+    str r2, [r0]
+
+    ldr r0, =WRAM_STOP_BEFORE           @ the total, for WRAM_STOP_IRQCOUNT
+    ldr r0, [r0]
+    ldr r1, =WRAM_STOP_AFTER
+    ldr r1, [r1]
+    add r0, r0, r1
+    ldr r1, =WRAM_STOP_IRQCOUNT
+    str r0, [r1]
+
+    mov r0, r8                          @ seconds: (after - before) mod 60
+    bl bcd8_to_bin
+    mov r8, r0
+    ldr r0, =WRAM_STOP_SECONDS
+    ldr r0, [r0]
+    bl bcd8_to_bin
+    subs r0, r8, r0
+    addmi r0, r0, #60
+    ldr r1, =WRAM_STOP_SECONDS
+    str r0, [r1]
+
+    mov r0, #0                          @ remove the handler
+    adr lr, 2f
+    ldr r1, =register_irq_handler
+    bx r1
+2:  mov r0, #0                          @ restore Timer1
+    str r0, [r4, #8]
+    str r5, [r4]
+    str r6, [r4, #4]
+    str r7, [r4, #8]
+    pop {r4, r5, r6, r7, r8, lr}
+    bx lr
+    .ltorg
+
+@ The IRQ callback of screen 13. It counts only Timer1, in the count of the phase. A button press also
+@ causes an interrupt, which wakes the CPU. For the first two Timer1 interrupts after the store, it
+@ keeps the RTC seconds.
+stop_irq_handler:
+    push {r0, r1, r2, r3, lr}
+    ldr r0, =INTC_BASE
+    ldr r1, [r0]
+    str r1, [r0, #0x10]                 @ acknowledge each pending source
+    tst r1, #INT_TIMER1_BIT
+    beq 9f
+    ldr r0, =WRAM_STOP_PHASE
+    ldr r0, [r0]
+    cmp r0, #0
+    ldreq r2, =WRAM_STOP_BEFORE
+    ldrne r2, =WRAM_STOP_AFTER
+    ldr r3, [r2]
+    add r3, r3, #1
+    str r3, [r2]
+    cmp r0, #0
+    beq 9f
+    cmp r3, #2
+    bhi 9f
+    ldr r0, =RTC_TIME_ADDR
+    ldr r0, [r0]
+    ldr r1, =WRAM_STOP_RTC
+    rsb r3, r3, #3                      @ the first goes to byte 2, the second to byte 1
+    strb r0, [r1, r3]
+9:  pop {r0, r1, r2, r3, pc}
+    .ltorg
 
 @ The third block, only in a build with BLOCKS=3 (see the Makefile). It holds the target of probe 10,
 @ at 0x02004000. The target is the same as at probe_pad + 4: MOV r1,PC, and then BX r3.
