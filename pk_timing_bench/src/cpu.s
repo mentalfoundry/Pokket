@@ -740,6 +740,13 @@ und_thumb_insn:
 @      branched to r0, and 0 if not. Row 3: LR minus the word, or EEEEEEEE if LR did not change.
 @      Row 4: the CPSR after the word. See probe_bx_space.
 @        17  E12FF150      18  E12FFF30      19  E12F0010      1A  E12FFF70
+@  1B  in Supervisor mode: CPSR bits 8 to 23, the bits that the SPSR keeps, and the SPSR form of
+@      E12FE120. See probe_priv_1b.
+@  1C  in Supervisor mode: three more words of the SPSR form of MSR. See probe_priv_1c.
+@  1D  E120FF10, and 1E  E12AFF10: the same as probes 17 to 1A, with bits 16 to 19 not all 1.
+@  1F  E12F0010 and two words like it, with bit 4 set and bits 12 to 15 not all 1. Each row is the
+@      CPSR after one word. See probe_msr_bit4.
+@  20  in Supervisor mode: the mode bits that the SPSR keeps. See probe_priv_20.
 @ In probes 0 and 6 to D, the word at the target is MOV r1,PC, and each other word of probe_pad is
 @ BX r3. r3 holds the address of probe_pc_back. If the probe returns, row 2 is r1 minus the aligned
 @ target: 8 if R15 was aligned, A if not, and 0 if MOV r1,PC did not execute.
@@ -957,6 +964,12 @@ probe_table:
     .word probe_bx_ff30         @ 18
     .word probe_bx_0010         @ 19
     .word probe_bx_ff70         @ 1A
+    .word probe_priv_1b         @ 1B
+    .word probe_priv_1c         @ 1C
+    .word probe_bx_0f10         @ 1D
+    .word probe_bx_af10         @ 1E
+    .word probe_msr_bit4        @ 1F
+    .word probe_priv_20         @ 20
 
 probe_aligned:
     ldr r4, =probe_pad + 4
@@ -1186,6 +1199,12 @@ probe_bx_ff30:
 probe_bx_0010:
     ldr r8, =0xE12F0010
     b probe_bx_space
+probe_bx_0f10:
+    ldr r8, =0xE120FF10
+    b probe_bx_space
+probe_bx_af10:
+    ldr r8, =0xE12AFF10
+    b probe_bx_space
 probe_bx_ff70:
     ldr r8, =0xE12FFF70
 probe_bx_space:                 @ r8 = the word
@@ -1210,6 +1229,127 @@ bxs_back:
     cmp lr, r2
     ldrne r2, =WRAM_PROBE_PAD
     subne r2, lr, r2
+    mov r0, #1
+    b probe_finish
+    .ltorg
+
+@ Probes 1B and 1C run their words in Supervisor mode, where an SPSR is present. trap_run already
+@ keeps the old SWI slot. The probe writes its own handler to that slot, and it executes SWI. The
+@ handler keeps SPSR_svc in r12, executes the words, writes SPSR_svc back, and returns with MOVS.
+@ Probe 1B:
+@   Row 2: the CPSR AND 00FFFF00, after a correct MSR CPSR_sx,r0 with r0 = 00FFFF00. It shows if the
+@          CPSR keeps bits 8 to 23.
+@   Row 3: the SPSR after a correct MSR SPSR_fsxc,r0 with r0 = FFFFFFFF. It shows the bits that the
+@          SPSR keeps.
+@   Row 4: the SPSR after E16FE120, which is E12FE120 for the SPSR, with r0 = A0000000 and
+@          SPSR = 00000010 before it. MSR SPSR_fsxc,r0,LSR #2 gives 28000000 or 20000000.
+probe_priv_1b:
+    ldr r4, =priv_1b
+    b probe_priv
+@ Probe 1C. The SPSR is 00000010 before each word:
+@   Row 2: the SPSR after E3680450, MSR SPSR_f,#50000000 with bits 12 to 15 clear.
+@   Row 3: the SPSR after E16F0000, MSR SPSR_fsxc,r0 with bits 12 to 15 clear, r0 = 50000000.
+@   Row 4: the SPSR after E16FF0C0, MSR SPSR_fsxc,r0,ASR #1, r0 = 80000000.
+@ Probe 20. Each word is a correct MSR SPSR_fsxc,r0 or MSR SPSR_c,r0, with no shift:
+@   Row 2: the SPSR after MSR SPSR_fsxc,r0 with r0 = 00000005. Mode bit 4 forced to 1 gives 15.
+@   Row 3: the SPSR after MSR SPSR_fsxc,r0 with r0 = 00000000.
+@   Row 4: the SPSR after MSR SPSR_c,r0 with r0 = 000000C3, from SPSR = 00000010.
+probe_priv_20:
+    ldr r4, =priv_20
+    b probe_priv
+probe_priv_1c:
+    ldr r4, =priv_1c
+probe_priv:                     @ r4 = the handler
+    adr r1, 1f
+    ldr r0, =WRAM_PROBE_TARGET
+    str r1, [r0]
+    mov r0, #KERNEL_SWI_SLOT
+    str r4, [r0]
+1:  swi 0
+    mov r0, #1
+    b probe_finish
+    .ltorg
+
+priv_1b:
+    mrs r12, spsr
+    ldr r0, =0x00FFFF00
+    .word 0xE126F000            @ msr cpsr_sx, r0
+    mrs r1, cpsr
+    and r1, r1, r0
+    mvn r0, #0
+    msr spsr_fsxc, r0
+    mrs r2, spsr
+    mov r0, #0x10
+    msr spsr_fsxc, r0
+    mov r0, #0xA0000000
+    .word 0xE16FE120
+    mrs r3, spsr
+    msr spsr_fsxc, r12
+    movs pc, lr
+    .ltorg
+
+priv_20:
+    mrs r12, spsr
+    mov r0, #0x05
+    msr spsr_fsxc, r0
+    mrs r1, spsr
+    mov r0, #0
+    msr spsr_fsxc, r0
+    mrs r2, spsr
+    mov r0, #0x10
+    msr spsr_fsxc, r0
+    mov r0, #0xC3
+    msr spsr_c, r0
+    mrs r3, spsr
+    msr spsr_fsxc, r12
+    movs pc, lr
+    .ltorg
+
+priv_1c:
+    mrs r12, spsr
+    mov r0, #0x10
+    msr spsr_fsxc, r0
+    .word 0xE3680450
+    mrs r1, spsr
+    mov r0, #0x10
+    msr spsr_fsxc, r0
+    mov r0, #0x50000000
+    .word 0xE16F0000
+    mrs r2, spsr
+    mov r0, #0x10
+    msr spsr_fsxc, r0
+    mov r0, #0x80000000
+    .word 0xE16FF0C0
+    mrs r3, spsr
+    msr spsr_fsxc, r12
+    movs pc, lr
+    .ltorg
+
+@ Probe 1F. NZCV = 0000 before each word. A branch to r0 causes a prefetch abort, which the trap
+@ records.
+@   Row 2: E12F0010 (Rs = r0, LSL), r0 = 50000000. r0 AND FF = 0, thus an MSR gives 50000000.
+@   Row 3: E12F1010 (Rs = r1, LSL), r0 = 05000000, r1 = 4. An MSR with the register shift gives
+@          50000000. An MSR with no shift gives 05000000, which writes no flag.
+@   Row 4: E12FE110, the same as row 3, with bits 12 to 15 = E.
+probe_msr_bit4:
+    adr r4, 1f
+    ldr r1, =WRAM_PROBE_TARGET
+    str r4, [r1]
+    mov r0, #0x50000000
+    msr cpsr_f, #0
+1:  .word 0xE12F0010
+    mrs r12, cpsr
+    mov r0, #0x05000000
+    mov r1, #4
+    msr cpsr_f, #0
+    .word 0xE12F1010
+    mrs r2, cpsr
+    mov r0, #0x05000000
+    mov r1, #4
+    msr cpsr_f, #0
+    .word 0xE12FE110
+    mrs r3, cpsr
+    mov r1, r12
     mov r0, #1
     b probe_finish
     .ltorg
