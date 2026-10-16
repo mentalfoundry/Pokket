@@ -354,7 +354,7 @@
 .equ WRAM_PROBE_T1,          0x640
 @ 8 words: the WRAM copy of the probe target. See probe_pad in cpu.s.
 .equ WRAM_PROBE_PAD,         0x650
-.equ PROBE_COUNT,            33
+.equ PROBE_COUNT,            34
 @ The watchdog: Timer1 at /32 with this period expires after (period + 1) * 32 cycles, which is
 @ approximately 8ms at CLK_MODE 7.
 .equ PROBE_WATCHDOG_PERIOD,  999

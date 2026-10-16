@@ -747,6 +747,7 @@ und_thumb_insn:
 @  1F  E12F0010 and two words like it, with bit 4 set and bits 12 to 15 not all 1. Each row is the
 @      CPSR after one word. See probe_msr_bit4.
 @  20  in Supervisor mode: the mode bits that the SPSR keeps. See probe_priv_20.
+@  21  in Supervisor mode: a write of the 26-bit mode 03 to the CPSR. See probe_priv_21.
 @ In probes 0 and 6 to D, the word at the target is MOV r1,PC, and each other word of probe_pad is
 @ BX r3. r3 holds the address of probe_pc_back. If the probe returns, row 2 is r1 minus the aligned
 @ target: 8 if R15 was aligned, A if not, and 0 if MOV r1,PC did not execute.
@@ -970,6 +971,7 @@ probe_table:
     .word probe_bx_af10         @ 1E
     .word probe_msr_bit4        @ 1F
     .word probe_priv_20         @ 20
+    .word probe_priv_21         @ 21
 
 probe_aligned:
     ldr r4, =probe_pad + 4
@@ -1257,6 +1259,16 @@ probe_priv_1b:
 probe_priv_20:
     ldr r4, =priv_20
     b probe_priv
+@ Probe 21. The handler writes mode 03 to the CPSR, which is the 26-bit Supervisor mode. If the CPU
+@ forces mode bit 4 to 1, the mode stays 13, and nothing changes. If not, the CPU reads the CPSR, and
+@ the next instruction writes the old control byte back. Those two instructions use only r0 and r2,
+@ which no mode banks. The handler also keeps LR in r11, for the return.
+@   Row 2: the CPSR before the write.
+@   Row 3: the CPSR immediately after the write of mode 03. 13 in the low 5 bits shows the forced bit.
+@   Row 4: the CPSR after the old control byte is back.
+probe_priv_21:
+    ldr r4, =priv_21
+    b probe_priv
 probe_priv_1c:
     ldr r4, =priv_1c
 probe_priv:                     @ r4 = the handler
@@ -1285,6 +1297,20 @@ priv_1b:
     .word 0xE16FE120
     mrs r3, spsr
     msr spsr_fsxc, r12
+    movs pc, lr
+    .ltorg
+
+priv_21:
+    mov r11, lr
+    mrs r0, cpsr
+    mov r1, r0
+    bic r3, r0, #0x1F
+    orr r3, r3, #0x03
+    msr cpsr_c, r3
+    mrs r2, cpsr
+    msr cpsr_c, r0
+    mrs r3, cpsr
+    mov lr, r11
     movs pc, lr
     .ltorg
 

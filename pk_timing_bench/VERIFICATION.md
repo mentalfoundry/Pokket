@@ -260,6 +260,7 @@ Probes 6 to 9, E, and 11 give values that depend on the addresses of the code in
 | 1E (`E12AFF10`) | `1E010000 00000001 EEEEEEEE 00000010` | the same |
 | 1F (bit 4 set, bits 12 to 15 not all 1) | `1F010000 00000010 00000010 00000010` | the same |
 | 20 (Supervisor mode: mode bit 4 of the SPSR) | `20010000 00000015 00000010 000000D3` | the same |
+| 21 (Supervisor mode: mode 03 written to the CPSR) | `21010000 60000093 60000093 60000093` | the same |
 
 The same unit, with a build of three blocks (`make BLOCKS=3`), on 2026-10-16. In that build, `0x02004000` is a target in the third block: `MOV r1,PC`, and then `BX r3`.
 
@@ -279,7 +280,7 @@ What these values show:
 - **Probes 6 to 9 are a result of the two rules above.** The CPU executed each duplicated halfword to the end of the app, with bit 1 of R15 set, and it did not branch. The first fetch after the end of the app, at `0x02004002`, caused the prefetch abort.
 - **The kernel sends the prefetch abort to its loop with no exit at `0x040001C8`.** Thus a misaligned R15 in FLASH1 stops the device if no handler of the app catches the abort.
 - **The abort boundary is the end of the blocks of the app, and not a fixed address.** In the build of two blocks, an access at `0x02004000` causes an abort. In the build of three blocks, the same access executes the target, and the abort moves to `0x02006000`. Probe 11 of the build of three blocks also shows the duplicated halfword (`E1A0E1A0`) in the third block.
-- **The decode of `MSR` and `BX` ignores bits that GBATEK gives as fixed.** Probes 14 to 16 show that `MSR` ignores bits 12 to 15, that bits 4 to 11 of the register form are a shift of Rm, and that the CPSR does not keep bits 24 to 27. Probes 17 to 1E show that `cond 0001 0010 xxxx 1111 xxxx 0xx1 Rm` is `BX`, with no link. Probes 1B, 1C, and 20 show the same `MSR` rules for the SPSR, that the CPSR and the SPSR keep only NZCV and the control byte, and that mode bit 4 of the SPSR always reads as 1. Probes 6 to 9 execute `E12FE12F`, which is `MSR CPSR_fsxc,PC,LSR #2`. That word clears the flags before the abort. See "The decode of MSR and BX" in `docs/hardware-notes.md`.
+- **The decode of `MSR` and `BX` ignores bits that GBATEK gives as fixed.** Probes 14 to 16 show that `MSR` ignores bits 12 to 15, that bits 4 to 11 of the register form are a shift of Rm, and that the CPSR does not keep bits 24 to 27. Probes 17 to 1E show that `cond 0001 0010 xxxx 1111 xxxx 0xx1 Rm` is `BX`, with no link. Probes 1B, 1C, and 20 show the same `MSR` rules for the SPSR, that the CPSR and the SPSR keep only NZCV and the control byte, and that mode bit 4 of the SPSR always reads as 1. Probe 21 shows the same bit of the CPSR: a write of mode 03 in Supervisor mode keeps mode 13. Probes 6 to 9 execute `E12FE12F`, which is `MSR CPSR_fsxc,PC,LSR #2`. That word clears the flags before the abort. See "The decode of MSR and BX" in `docs/hardware-notes.md`.
 - **This emulator agrees with each value.** It executes the same words to the same abort address in probes 6 to 9.
 
 ## What these values settle
