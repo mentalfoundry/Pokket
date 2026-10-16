@@ -1,4 +1,4 @@
-/* pack.c puts the assembled and linked 8KB PocketStation app body into a real
+/* pack.c puts the assembled and linked PocketStation app body, of BLOCKS 8KB blocks, into a real
  * PS1 single-save directory frame. The result is the final
  * pk_timing_bench.mcs file. The Makefile makes the app body with the
  * assembler, the linker, and the object-copy tool.
@@ -9,7 +9,12 @@
 #include <stdio.h>
 #include <string.h>
 
-#define BODY_SIZE 0x2000u
+/* The number of 8KB blocks. The Makefile gives it with -DBLOCKS. */
+#ifndef BLOCKS
+#define BLOCKS 2
+#endif
+#define BLOCK_SIZE 0x2000u
+#define BODY_SIZE (BLOCKS * BLOCK_SIZE)
 
 static uint8_t directory_frame_xor(const uint8_t *frame) {
     uint8_t x = 0;
@@ -41,13 +46,21 @@ int main(int argc, char **argv) {
 
     uint8_t frame[0x80];
     memset(frame, 0, sizeof(frame));
-    frame[0x00] = 0x51; /* solo block */
+    frame[0x00] = 0x51; /* the first block of the save */
     frame[0x04] = (uint8_t)(BODY_SIZE & 0xFFu);
     frame[0x05] = (uint8_t)((BODY_SIZE >> 8) & 0xFFu);
     frame[0x06] = (uint8_t)((BODY_SIZE >> 16) & 0xFFu);
     frame[0x07] = (uint8_t)((BODY_SIZE >> 24) & 0xFFu);
-    frame[0x08] = 0xFF;
-    frame[0x09] = 0xFF; /* end of chain */
+    /* The link to the next block. A save of one block ends the chain with 0xFFFF. Each real save
+     * of more than one block in testdata/ has 0x0001 in its .mcs frame, thus this file uses the
+     * same value. */
+    if (BODY_SIZE > BLOCK_SIZE) {
+        frame[0x08] = 0x01;
+        frame[0x09] = 0x00;
+    } else {
+        frame[0x08] = 0xFF;
+        frame[0x09] = 0xFF;
+    }
 
     /* An identifier in the form of a product code. It is 20 bytes, at 0x0A to
      * 0x1D. It uses the real PS1 convention of a maker and region prefix, and

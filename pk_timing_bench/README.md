@@ -30,11 +30,13 @@ This build needs the [GNU Arm Embedded Toolchain](https://developer.arm.com/down
 make
 ```
 
-`make` writes `pk_timing_bench.mcs` into this directory. The file is 8320 bytes. It holds a real PS1 single-save directory frame, and one 8KB PSX Title Sector app block. Load it with any frontend of this project, through `psemu_load_content`. The memory-card-loading pipeline of a real PocketStation also loads it.
+`make` writes `pk_timing_bench.mcs` into this directory. The file is 16512 bytes. It holds a real PS1 single-save directory frame, and a PSX Title Sector app of two 8KB blocks. The first block holds screens 1 to 18. The second block holds only the code of screens 19 to 29 (`src/cpu.s`). Thus each measurement routine of the first block has the same address as in the build of one block. Load it with any frontend of this project, through `psemu_load_content`. The memory-card-loading pipeline of a real PocketStation also loads it.
 
 **Link the objects in the exact `$(OBJS)` order of the Makefile** (`header icon mirrors font thumb_loop start helpers experiments ui`). Do not pass `src/*.o` to the toolchain by hand. The shell expands that pattern alphabetically. It then links `experiments.o` first, and it pushes `_start` several hundred bytes further into `.text`. The fixed-offset sections in [`link.ld`](link.ld) still land correctly, and the entry-point word at body `0x5C` still points at the real `_start`. Thus the build is successful, and the app operates. But the layout of that image is very different from the layout that `make` gives. Thus a byte comparison against a known-good build is not possible. `_start` must come immediately after `.thumb_loop`.
 
 This build needs no Python, and it needs no assembler-specific scripting. The real ARM source and Thumb source are in [`src/`](src/), as editable GNU-syntax assembly. [`link.ld`](link.ld) puts each piece at the exact body offset that the runtime logic needs. [`pack.c`](pack.c) is the only code that is not assembly. It puts the assembled and linked binary into the PS1 directory-frame header. If the toolchain binaries are not on `PATH`, give `AS`, `LD`, `OBJCOPY`, or `CC` on the `make` command line.
+
+`make BLOCKS=3` makes an app of three blocks. The third block holds only the target of probe 10 on screen 29. Probes 10 to 13 then show if the abort of an access in FLASH1 occurs at the end of the app, or at a fixed address. Do `make clean` before a change of `BLOCKS`. The prebuilt file is the default build of two blocks.
 
 This directory already holds a prebuilt `pk_timing_bench.mcs`. The toolchain is necessary only for a change to the source.
 
@@ -59,7 +61,8 @@ This app runs its startup measurements one time, at power-on. A person then page
 
 - **RIGHT**: the next screen
 - **LEFT**: the previous screen
-- The screens wrap around: 1 to 11, then screen 13, then screen 14, then screen 15, then screens 16 to 18, then 1. Thus LEFT from screen 1 goes directly to screen 18.
+- The screens wrap around: 1 to 11, then screen 13, then screen 14, then screen 15, then screens 16 to 29, then 1. Thus LEFT from screen 1 goes directly to screen 29. No screen stops the device. See "Screens 19 to 28" below.
+- **UP** and **DOWN**, on screen 29 only, select a probe and run it. See "Screen 29" below.
 - **DOWN**, on screen 13 only, runs the CLK stop test. That is the one measurement here that does not run at startup, because only a button press from a person can end it. See "Screen 13" below.
 - **DOWN**, on screen 15 only, arms the COM timing run before the device goes into a memory card slot, and it clears the captures of the run before. **UP**, on screen 15 only, shows the next stored capture after the device comes out. See "Screen 15" below.
 - **A hold on ACTION** opens a CONTINUE/EXIT prompt. That prompt returns to the system without a hardware reset. UP selects CONTINUE, DOWN selects EXIT, and a new ACTION press confirms the selection. See "Screen index used for the continue/exit prompt" in `src/constants.inc`, and `pb_prompt_confirm_exit` in `src/ui.s`, for the full behavior.
@@ -354,6 +357,118 @@ On real hardware, the ARM rows and the Thumb rows of each screen agree. Thumb in
 
 **Why these screens exist.** Real apps use misaligned loads, but each known app uses only the low byte of the result. A homebrew ID editor reads a font table with `LDRH`, and a fighting-game app reads a table of sprite frame numbers with a Thumb `LDR`. The low byte cannot separate the first two `LDRH` candidates: only the upper bits do. These screens show the full register. See "CPU" in [docs/hardware-notes.md](../docs/hardware-notes.md), and the results in [VERIFICATION.md](VERIFICATION.md).
 
+### Screens 19 to 28: the CPU rules of GBATEK, on real hardware
+
+GBATEK is the CPU documentation of this emulator. See "CPU" in [docs/hardware-notes.md](../docs/hardware-notes.md). These screens measure CPU rules of GBATEK that an app can see, and that a simple model of the CPU does not have. GBATEK is documentation, thus a result on real hardware is the authority. [VERIFICATION.md](VERIFICATION.md) gives the real-hardware value and the value of this emulator for each row.
+
+Each screen runs its test each time that it is drawn. The test data is in WRAM. The top-left of each screen shows its number in hex, from `13` to `1C`. [`src/cpu.s`](src/cpu.s) holds each test, with the exact meaning of each row.
+
+**No screen here stops the device.** Screens 26, 27, and 28 execute instructions that can jump. Screens 26 and 28 prepare a safe target for each result, and real hardware confirms each one. Screen 27 runs its tests with the traps of screen 29 (see "Screen 29" below). Thus a trap catches each result that does not return. No screen here writes flash. Screens 27 and 28 write kernel RAM, and they write the old values back after the test.
+
+**Screens 19 to 23 and 26 to 28 give exact values.** In each row below, the GBATEK value is the value that the text of GBATEK gives. A dash means that GBATEK gives no value. Real hardware agrees with each GBATEK value, except on screen 27.
+
+| screen | row | the test | GBATEK |
+|---|---|---|---|
+| 19 (`13`) | 1 | `SWP` at data + 1: the value that it reads | `11843322` |
+| | 2 | the aligned word at data + 0 after that `SWP`, which writes `A1B2C3D4` | `A1B2C3D4` |
+| | 3 | the aligned word at data + 4 after that `SWP` | `88776655` |
+| | 4 | `SWP` at data + 3: the value that it reads | `33221184` |
+| 20 (`14`) | 1 | R15 as an ALU operand, minus the address of the instruction. One byte for each form, from the high byte: `ADD r1,PC,r3,LSL r2`, `MOV r1,PC,LSL r2`, `ADD r1,PC,r3`, `MOV r1,PC` | `0C0C0808` |
+| | 2 | the stored R15, minus the address of the instruction. From the high byte: `STR PC`, `STRH PC`, `STMIA {PC}`. The low byte is not used | `0C0C`, then a dash for `STM` |
+| 21 (`15`) | 1 | `LDMIA r0!,{r0,r1}` over the data `11111111 22222222`: the value of r0 | `11111111` |
+| | 2 | `LDMIA r1!,{r0,r1}`: the value of r1 | `22222222` |
+| | 3 | `STMIA r0!,{r0,r1}`: the stored r0 minus the old base. 0 is the old base, and 8 is the new base | `00000000` |
+| | 4 | `STMIA r1!,{r0,r1}`: the stored r1 minus the old base | `00000008` |
+| 22 (`16`) | 1 to 4 | the same as screen 21, with the Thumb `LDMIA` and `STMIA` | the same as screen 21 |
+| 23 (`17`) | 1 | Thumb `PUSH {r1}` with SP = data + 6, and r1 = `11223344`: the aligned word at data + 0 | `11223344` |
+| | 2 | the aligned word at data + 4 | `00000000` |
+| | 3 | SP after the `PUSH`, minus data | `00000002` |
+| | 4 | the value that a `POP` then reads | `11223344` |
+| 26 (`1A`) | 1 | ARM `STMIA r0!,{}`. High half: the base after, minus the base before. Low half: the word at the base minus the address of the `STM`, or `0000` if no store occurred at the base | `0040`, then a dash |
+| | 2 | ARM `LDMIA r0!,{}`. High half: as row 1. Low half: 1 if the instruction loaded the PC | `00400001` |
+| | 3 | Thumb `STMIA r0!,{}`, the same as row 1 | `0040`, then a dash |
+| | 4 | Thumb `LDMIA r0!,{}`, the same as row 2 | `00400001` |
+| 27 (`1B`) | 1 | `MOV PC,r2` with an address 2 above a word boundary. The high byte is the result of the traps (`01` = the test returned, `02` = undefined instruction). The low 3 bytes are R15 minus the aligned target for a return, or LR minus the aligned target for a trap. The words at the target give `01000008` if R15 is aligned, `0100000A` if R15 keeps bit 1 and the fetch gives the aligned word, and `0200000E` if R15 keeps bit 1 and the fetch gives the halfword in both halves. See `test_misaligned_pc` in `src/cpu.s` | `01000008` |
+| | 2 | the same with `LDR PC,[r5]` | `01000008` |
+| | 3 | the same with `LDMIA r5,{PC}` | `01000008` |
+| | 4 | the same with `BX r2`, where bit 0 is clear | `01000008` |
+| 28 (`1C`) | 1 | ARM `0xE7F000F0`. `LR_und` minus the address of the instruction, or 0 if the undefined-instruction handler did not run | `00000004` |
+| | 2 | Bits 8 to 15: the low byte of CPSR in the handler. Bits 0 to 7: the low byte of `SPSR_und` | `00009B10` |
+| | 3 | Thumb `0xDE00`, the same as row 1 | `00000002` |
+| | 4 | Thumb `0xDE00`, the same as row 2 | `00009B30` |
+
+Notes on the GBATEK values:
+
+- Screen 26: GBATEK says that an empty list transfers R15, but it does not give the stored value of R15. Thus the low half of rows 1 and 3 has no GBATEK value.
+- Screen 28, rows 2 and 4: `9B` is Undefined mode with I set. GBATEK gives I=1 and an unchanged F for this exception. The app runs in User mode, which cannot set F. `10` and `30` are User mode in the ARM state and in the Thumb state.
+- Screen 28: the kernel vector at `0x04` is `LDR PC,[PC,#0x18]`, which reads the handler address from RAM `0x24`. The test writes the address of its own handler to that word, and it writes the old value back after the test. If that word does not keep the written value, the test does not execute the undefined instruction, and each row is `EEEEEEEE`.
+- A CPU that does not decode these encodings as undefined can execute `0xE7F000F0` as `LDRB r0,[r0,r0,ROR r0]!`, and `0xDE00` as a branch to +4. The test gives those two instructions a safe result.
+
+**Screens 24 and 25 give Timer0 ticks across `LOOP_N` loops.** Compare the rows of one screen. Do not compare the absolute values with other screens.
+
+| screen | row | the test | GBATEK |
+|---|---|---|---|
+| 24 (`18`) | 1 | Thumb `MUL` with Rd = 5 and Rs = `12345678` | equal to row 3 |
+| | 2 | Thumb `MUL` with Rd = `12345678` and Rs = 5 | equal to row 4 |
+| | 3 | Rd = 5 and Rs = 5: the cost with m = 1 | |
+| | 4 | Rd = `12345678` and Rs = `12345678`: the cost with m = 4 | |
+| 25 (`19`) | 1 | `UMULL` with Rs = `000000FF`: the cost with m = 1 | |
+| | 2 | `UMULL` with Rs = `FFFFFFFF` | equal to row 4 |
+| | 3 | `SMULL` with Rs = `FFFFFFFF`, which is m = 1 for both rules | equal to row 1 |
+| | 4 | `UMULL` with Rs = `12345678`: the cost with m = 4 | |
+
+GBATEK gives the multiply cost from the high bytes of the incoming Rd for a Thumb `MUL`, because Thumb `MUL Rd,Rs` is ARM `MULS Rd,Rs,Rd`. For `UMULL` and `UMLAL`, GBATEK stops the multiply early only for high bytes that are all zero. The signed forms also stop early for high bytes that are all one.
+
+### Screen 29: the probe of a misaligned write to R15
+
+This screen finds how the CPU executes after a write of a misaligned address to R15. The kernel sends the undefined-instruction exception, the prefetch abort, and the data abort to `0x040001C8`, which is a loop with no exit (`nop; b .`). Thus each one of these exceptions stops the device, and the LCD keeps its last contents.
+
+This screen runs nothing when it is drawn. **UP** selects the next probe, and **DOWN** runs the selected probe. During a probe, the kernel slots of the undefined-instruction, SWI, prefetch-abort, data-abort, and IRQ handlers hold the trap handlers of the app, and Timer1 gives an IRQ after approximately 8ms as a watchdog. A trap records the exception, and it returns to the app. After each probe, the app writes the old slots and the old Timer1 back. [`src/cpu.s`](src/cpu.s) holds each probe.
+
+**Row 1:** the high byte is the probe number. The next byte is the result:
+
+| result | meaning |
+|---|---|
+| `00` | not run |
+| `01` | the probe returned |
+| `02` | undefined-instruction exception |
+| `03` | SWI |
+| `04` | prefetch abort |
+| `05` | data abort |
+| `06` | the watchdog IRQ |
+| `EE` | a kernel slot did not keep the written value. The probe did not run |
+| `FF` | the probe is running. If the device stops, the LCD keeps this value |
+
+**Rows 2 to 4 after a trap:** row 2 is the return address of the exception minus the target of the probe. Row 3 is the CPSR at the exception. Row 4 is r1 at the exception minus the target, or 0 if r1 was 0.
+
+| probe | test | rows 2 to 4 if the probe returns |
+|---|---|---|
+| 0 | control: `MOV PC` to an aligned target in FLASH1 | row 2: 8 |
+| 1 | control: the undefined instruction `0xE7F000F0` | a trap, `02`, with row 2 = 4 |
+| 2 | control: a loop with no exit | a trap, `06`, with row 2 = 4 |
+| 3 | `LDR` from FLASH1 at an aligned word + 2. The data is `11 22 33 84 55 66 77 88` | row 2: that `LDR`. Rows 3 and 4: the aligned words at +0 and +4 |
+| 4 | the same, from BIOS ROM at `0x04000210` | the same |
+| 5 | the same, from WRAM | the same |
+| 6 | `MOV PC` to a FLASH1 target + 2 | row 2: 8 if R15 was aligned, A if not, 0 if the target instruction did not execute |
+| 7 | `LDR PC`, to the same | the same |
+| 8 | `LDMIA {PC}`, to the same | the same |
+| 9 | `BX`, bit 0 clear, to the same | the same |
+| A to D | probes 6 to 9, with the target in WRAM | the same |
+| E | the fetch rule: `MOV PC` to a FLASH1 target + 2, where each fetch rule executes a different instruction. See `probe_fetch_pad` in `src/cpu.s` | a trap. Row 2 and row 4 identify the rule |
+| F | the same, with the target in WRAM | the same |
+| 10 | `MOV PC` to `0x02004000`, with R15 aligned. In the default build, that is the first address after the app. In a build with `BLOCKS=3`, it is a target in the third block | row 2: 8 with `BLOCKS=3` |
+| 11 | `LDR` at `0x02004000` + 2, + 0, and + 4, the same as probe 3 | the same as probe 3 |
+| 12 | `MOV PC` to `0x02006000`, with R15 aligned. That is after the app in both builds | row 2: 0 |
+| 13 | `LDR` at `0x02006000`, the same as probe 11 | the same as probe 3 |
+| 14 | three words in the encoding space of `MSR CPSR,Rm`, with bits 12 to 15 not all 1. Each row is the CPSR after one word. See `probe_msr_space` in `src/cpu.s` | row 2: `E12FE12F`, with NZCV = 1111 before it. Row 3: `E12FE120`, with r0 = `A0000000` and NZCV = 0000. Row 4: `E12F0000`, with r0 = `50000000` and NZCV = 0000. An `MSR` writes the flags from R15, from `A0000000`, and from `50000000`. A `TEQ` with no flag write keeps them |
+| 15 | `MSR CPSR,Rm` with three shifts: `ASR #1` of `80000000`, `ROR #4` of `00000005`, and `RRX` of `20000000` with C = 1. See `probe_msr_shifts` in `src/cpu.s` | rows 2 to 4: the CPSR after each word. A shift gives `C`, `5`, and `9` in the flags |
+| 16 | row 2: a correct `MSR CPSR_f` with `5F000000`. Row 3: `MSR CPSR_f,#50000000` with bits 12 to 15 clear. See `probe_msr_other` in `src/cpu.s` | row 2 shows if the CPSR keeps bits 24 to 27. Row 3 shows if the immediate form ignores bits 12 to 15 |
+| 17 to 1A | one word in the encoding space of `BX`, in WRAM, with r0 = a target: `E12FF150`, `E12FFF30`, `E12F0010`, and `E12FFF70`. See `probe_bx_space` in `src/cpu.s` | row 2: 1 if the word branched to r0. Row 3: LR minus the word, or `EEEEEEEE` if LR did not change. Row 4: the CPSR |
+
+The word at the target is `MOV r1,PC`, and each other word near the target is `BX r3`, which returns to the app. Probes 3 to 5 show how each memory region answers a word read at an address 2 above a word boundary. A difference between FLASH1 and WRAM in probes 6 to D then points to the memory, and not to the CPU.
+
+Run the controls first. Probes 1 and 2 confirm that the traps operate on the unit. If either one stops the device, do not run probes 6 to D. See "Screen 29" in [VERIFICATION.md](VERIFICATION.md) for the real-hardware values, and for the rules that they show.
+
 ### Reading the hex digits
 
 Each row is 8 hex digits, from 0 to 9 and A to F, with the most significant nibble first. A small 3 by 5 pixel font draws each digit. The rows use the full 32-pixel screen width exactly: 8 digits at a 4px pitch is 32px.
@@ -383,7 +498,7 @@ Together, these two bytes corrupted the app-select screen of the real BIOS. LEFT
 
 The screen with the error draws the contents of body `0x200` to `0x2FF`. A deliberate edit to that region changed the data that appeared. That method confirmed the region as the read target, and not as the cause.
 
-One reference dump isolated this fault. That dump has byte-for-byte the same container shape as this app: one block, a `0x2000` body, and chain link `0xFFFF`. It draws correctly. Thus the container is not the cause, and only the declared header fields remain. With both bytes corrected, the header of this app agrees with a known-good multi-block dump in each field except the block count, which is correctly different.
+One reference dump isolated this fault. That dump has byte-for-byte the container shape that this app had at that time: one block, a `0x2000` body, and chain link `0xFFFF`. It draws correctly. Thus the container is not the cause, and only the declared header fields remain. With both bytes corrected, the header of this app agrees with a known-good multi-block dump in each field except the block count, which is correctly different.
 
 This work removed two candidates. The first candidate is the unidentified icon data at `0x200` to `0x2FF`. A test filled that area with the bitmap of this app. The error on the screen changed, but it did not stop, and this project reversed that change. The second candidate is the object link order for a manual build. See "Building".
 

@@ -128,7 +128,7 @@ clr_loop:
     cmp r4, #SCREEN_EXIT_PROMPT
     beq rs_exit_prompt
 
-    @ Screens 16 to 18 draw their own number: the font has no glyph above F.
+    @ Screens 16 to 28 draw their own number: the font has no glyph above F.
     cmp r4, #SCREEN_LOAD_LDR
     blo rs_glyph
     mov r0, r4
@@ -535,7 +535,7 @@ pb_check_right:
     @ reason as the stop test above.
 pb_check_com:
     cmp r4, #SCREEN_COM_TIMING
-    bne pb_check_right_real
+    bne pb_check_probe
     tst r5, #0x10
     beq pb_com_down
     tst r0, #0x10
@@ -552,6 +552,19 @@ pb_com_down:
     ldr r6, =INTC_STATUS
     ldr r5, [r6]
     mov r1, #1
+    b pb_store
+
+    @ Screen 29: Up selects the next probe, and Down runs it. See
+    @ probe_buttons in cpu.s. A probe can last until its watchdog interrupt,
+    @ thus sample the buttons again afterwards, the same as the stop test.
+pb_check_probe:
+    cmp r4, #SCREEN_PC_PROBE
+    bne pb_check_right_real
+    bl probe_buttons
+    cmp r1, #0
+    beq pb_check_right_real
+    ldr r6, =INTC_STATUS
+    ldr r5, [r6]
     b pb_store
 
 pb_check_right_real:
@@ -729,9 +742,9 @@ pb_store:
     bx lr
     .ltorg
 
-@ The cycle is 1..11, then SCREEN_STOP_TEST (13), then SCREEN_RTC_RATES (14),
-@ then SCREEN_COM_TIMING (15), then SCREEN_LOAD_LDR to SCREEN_LOAD_LDRSH (16 to
-@ 18), wrapping back to 1.
+@ The cycle is 1 to 11, then SCREEN_STOP_TEST (13), then SCREEN_RTC_RATES (14),
+@ then SCREEN_COM_TIMING (15), then SCREEN_LOAD_LDR to SCREEN_LAST (16 to 29).
+@ After SCREEN_LAST, the cycle starts again at 1.
 @ SCREEN_EXIT_PROMPT (12) is deliberately skipped: it is not a result screen,
 @ it is reached only by holding Action, and tools/pk_exit_test.c depends on its
 @ index, so it stays where it is rather than being renumbered around.
@@ -739,7 +752,7 @@ screen_next:
     push {r0, r1, lr}
     ldr r0, =WRAM_SCREEN_INDEX
     ldr r1, [r0]
-    cmp r1, #SCREEN_LOAD_LDRSH
+    cmp r1, #SCREEN_LAST
     moveq r1, #1
     beq sn_store
     cmp r1, #SCREEN_COM_TIMING
@@ -780,7 +793,7 @@ screen_prev:
     sub r1, r1, #1
     cmp r1, #1
     bge sp_store
-    mov r1, #SCREEN_LOAD_LDRSH
+    mov r1, #SCREEN_LAST
 sp_store:
     str r1, [r0]
     pop {r0, r1, lr}

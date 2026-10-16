@@ -10,10 +10,18 @@ LD      ?= arm-none-eabi-ld
 OBJCOPY ?= arm-none-eabi-objcopy
 CC      ?= cc
 
-ASFLAGS = -mcpu=arm7tdmi -I src
+# The number of 8KB blocks of the app. The default is 2. BLOCKS=3 adds a third block, which holds
+# only the target of probe 10 on screen 29 (see README.md, "Screen 29"). Do "make clean" before a
+# change of BLOCKS.
+BLOCKS ?= 2
+BODY_END_2 = 0x02004000
+BODY_END_3 = 0x02006000
+
+ASFLAGS = -mcpu=arm7tdmi -I src --defsym BLOCKS=$(BLOCKS)
 
 SRCS = src/header.s src/icon.s src/mirrors.s src/font.s src/thumb_loop.s \
-       src/start.s src/helpers.s src/experiments.s src/ui.s src/loads.s
+       src/start.s src/helpers.s src/experiments.s src/ui.s src/loads.s \
+       src/cpu.s
 OBJS = $(SRCS:.s=.o)
 
 all: pk_timing_bench.mcs
@@ -35,13 +43,13 @@ src/%.o: src/%.s src/constants.inc
 	$(AS) $(ASFLAGS) -o $@ $<
 
 body.elf: $(OBJS) link.ld
-	$(LD) -T link.ld -o body.elf $(OBJS)
+	$(LD) -T link.ld --defsym BODY_END=$(BODY_END_$(BLOCKS)) -o body.elf $(OBJS)
 
 body.bin: body.elf
-	$(OBJCOPY) -O binary --pad-to=0x02002000 --gap-fill=0x00 body.elf body.bin
+	$(OBJCOPY) -O binary --pad-to=$(BODY_END_$(BLOCKS)) --gap-fill=0x00 body.elf body.bin
 
 pack: pack.c
-	$(CC) -O2 -o pack pack.c
+	$(CC) -O2 -DBLOCKS=$(BLOCKS) -o pack pack.c
 
 pk_timing_bench.mcs: body.bin pack
 	./pack body.bin pk_timing_bench.mcs

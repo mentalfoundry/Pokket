@@ -313,3 +313,49 @@
 @ 12 words: 4 for each instruction, in screen order. In each group: ARM +1, ARM +3, Thumb +1,
 @ Thumb +3.
 .equ WRAM_LOAD_RESULTS,      0x540
+
+@ Screens 19 to 28: the CPU rules of GBATEK, on real hardware. See
+@ draw_cpu_screen in cpu.s, and ../README.md, "Screens 19 to 28". The code of these screens is in
+@ the second 8KB block of the app.
+.equ SCREEN_CPU_FIRST,       19
+.equ SCREEN_PC_PROBE,        29
+.equ SCREEN_LAST,            29
+@ 4 words: the four rows of the CPU screen that is on the LCD.
+.equ WRAM_CPU_RESULTS,       0x570
+@ 16 bytes of test data for SWP, LDM, STM, and PUSH.
+.equ WRAM_CPU_DATA,          0x580
+@ 0x80 bytes for the empty register list. The base register points to the middle, thus an
+@ address 0x40 below or above the base is also in the buffer. The buffer ends at 0x610. The app
+@ stack starts at 0x800, and it grows down.
+.equ WRAM_CPU_BUF,           0x590
+.equ WRAM_CPU_BUF_MID,       0x5D0
+@ The pointer to the undefined-instruction handler, in the kernel vector table. The vector at
+@ 0x04 is LDR PC,[PC,#0x18]. See "SWI (syscall) mechanism" in ../../docs/hardware-notes.md.
+.equ KERNEL_UND_SLOT,        0x24
+
+@ Screen 29: the probe of a misaligned write to R15. See probe_run in cpu.s.
+@ The kernel vector table at 0x00 reads each handler address from the slot at the vector + 0x20.
+@ The probe writes its own handlers to these slots during one probe.
+.equ KERNEL_SWI_SLOT,        0x28
+.equ KERNEL_PABT_SLOT,       0x2C
+.equ KERNEL_DABT_SLOT,       0x30
+.equ KERNEL_IRQ_SLOT,        0x38
+@ The selected probe (0 to PROBE_COUNT - 1).
+.equ WRAM_PROBE_SEL,         0x610
+@ 4 words: the four rows of screen 29.
+.equ WRAM_PROBE_ROWS,        0x614
+@ The SP of the caller of probe_run. Recovery from a trap loads it again.
+.equ WRAM_PROBE_SP,          0x624
+@ The aligned target address of the probe. The rows give addresses relative to it.
+.equ WRAM_PROBE_TARGET,      0x628
+@ 5 words: the old values of the UND, SWI, PABT, DABT, and IRQ slots.
+.equ WRAM_PROBE_SLOTS,       0x62C
+@ 3 words: the old Timer1 period, count, and control.
+.equ WRAM_PROBE_T1,          0x640
+@ 8 words: the WRAM copy of the probe target. See probe_pad in cpu.s.
+.equ WRAM_PROBE_PAD,         0x650
+.equ PROBE_COUNT,            27
+@ The watchdog: Timer1 at /32 with this period expires after (period + 1) * 32 cycles, which is
+@ approximately 8ms at CLK_MODE 7.
+.equ PROBE_WATCHDOG_PERIOD,  999
+.equ PROBE_WATCHDOG_CTRL,    0x5

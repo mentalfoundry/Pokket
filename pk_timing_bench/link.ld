@@ -33,7 +33,20 @@ SECTIONS
 
     .text : ALIGN(4) { *(.text) }
 
-    ASSERT(. <= 0x02002000, "pk_timing_bench body overflowed 8KB (BODY_SIZE)")
+    ASSERT(. <= 0x02002000, "the first 8KB block of pk_timing_bench is full")
+
+    /* The second 8KB block holds the CPU screens (cpu.s). Each routine of the first block thus
+     * keeps its address. */
+    . = 0x02002000;
+    .cpu : { *(.cpu) }
+
+    ASSERT(. <= 0x02004000, "the second 8KB block of pk_timing_bench is full")
+
+    /* A build with BLOCKS=3 has a third block. It holds only the target of probe 10 (cpu.s). */
+    . = 0x02004000;
+    .block3 : { KEEP(*(.block3)) }
+
+    ASSERT(. <= BODY_END, "pk_timing_bench body is larger than BLOCKS (see the Makefile)")
 
     /DISCARD/ : { *(.ARM.attributes) *(.ARM.exidx*) *(.comment) *(.note.*) }
 }

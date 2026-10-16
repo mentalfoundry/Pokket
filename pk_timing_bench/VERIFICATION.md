@@ -186,6 +186,96 @@ These values are exact. They have no jitter. See "Screens 16 to 18" in [README.m
 | | Thumb +1 | `00000022` | `00000022` |
 | | Thumb +3 | `FFFFFF84` | `FFFFFF84` |
 
+## Screens 19 to 28: the CPU rules of GBATEK, on real hardware
+
+See "Screens 19 to 28" in [README.md](README.md) for the test of each row, and for the value that GBATEK gives. Screens 24 and 25 are Timer0 ticks. Each other screen gives exact values.
+
+**Real hardware:** 2026-10-16. **This emulator:** a run of `tools/bench_probe.c` on 2026-10-16, after the corrections of the CPU core that these screens confirm. That tool read the WRAM result block at `0x570`.
+
+| screen | row 1 | row 2 | row 3 | row 4 | source |
+|---|---|---|---|---|---|
+| 19 (`SWP`) | `11843322` | `A1B2C3D4` | `88776655` | `33221184` | Real hardware |
+| | `11843322` | `A1B2C3D4` | `88776655` | `33221184` | This emulator |
+| 20 (R15 read) | `0C0C0808` | `0C0C0C00` | `00000000` | `00000000` | Real hardware |
+| | `0C0C0808` | `0C0C0C00` | `00000000` | `00000000` | This emulator |
+| 21 (ARM base in list) | `11111111` | `22222222` | `00000000` | `00000008` | Real hardware |
+| | `11111111` | `22222222` | `00000000` | `00000008` | This emulator |
+| 22 (Thumb base in list) | `11111111` | `22222222` | `00000000` | `00000008` | Real hardware |
+| | `11111111` | `22222222` | `00000000` | `00000008` | This emulator |
+| 23 (`PUSH`, misaligned SP) | `11223344` | `00000000` | `00000002` | `11223344` | Real hardware |
+| | `11223344` | `00000000` | `00000002` | `11223344` | This emulator |
+| 24 (Thumb `MUL` cost) | `000019A3` | `000024A0` | `000019A3` | `000024A0` | Real hardware |
+| | `000019A3` | `0000249F` | `000019A3` | `0000249F` | This emulator |
+| 25 (`UMULL` cost) | `00002BF2` | `000036EE` | `00002BF2` | `000036EE` | Real hardware |
+| | `00002BF2` | `000036EF` | `00002BF2` | `000036EE` | This emulator |
+| 26 (empty list) | `0040000C` | `00400001` | `00400006` | `00400001` | Real hardware |
+| | `0040000C` | `00400001` | `00400006` | `00400001` | This emulator |
+| 27 (misaligned R15) | `0200000E` | `0200000E` | `0200000E` | `0200000E` | Real hardware |
+| | `0200000E` | `0200000E` | `0200000E` | `0200000E` | This emulator |
+| 28 (undefined instruction) | `00000004` | `00009B10` | `00000002` | `00009B30` | Real hardware |
+| | `00000004` | `00009B10` | `00000002` | `00009B30` | This emulator |
+
+Each real-hardware value of screens 19 to 26 and 28 agrees with the value that GBATEK gives. Screen 26 also gives the stored value of R15, which GBATEK does not give: PC+12 for ARM, and PC+6 for Thumb. The timing rows of screens 24 and 25 agree with this emulator to the tick, except for the row that tests the rule.
+
+Screen 27 runs its tests with the traps of screen 29, and its target ends each fetch rule in a known way. Real hardware gives `0200000E` in each row: R15 keeps bit 1, the fetch in FLASH1 gives the halfword in both halves, and the trap catches the undefined word at the target + `0xE`. GBATEK gives `01000008`. A version of screen 27 with no traps and a different target stopped a real unit, with a blank LCD.
+
+This emulator agrees with each real-hardware value of screens 19 to 28. The timing rows of screens 24 and 25 agree within the jitter of 1 tick.
+
+## Screen 29: the probe of a misaligned write to R15
+
+See "Screen 29" in [README.md](README.md) for the meaning of each probe and each row. **Real hardware:** 2026-10-16, a J-110 BIOS. Each probe ran one time.
+
+Probes 6 to 9, E, and 11 give values that depend on the addresses of the code in the build. Real hardware ran those probes on two earlier builds: probes 0 to D on the build before probes E to 11, and probes E to 11 on the build before probes 12 and 13. **This emulator** gives the values below for those same builds, after the corrections of the CPU core. The committed build gives different values for these probes, on real hardware and in this emulator. For example, in the committed build, probes 6 to 9 stop at the undefined target of probe E, which comes after their target.
+
+| probe | real hardware | this emulator |
+|---|---|---|
+| 0 (control: aligned `MOV PC`) | `00010000 00000008 00000000 00000000` | the same |
+| 1 (control: undefined instruction) | `01020000 00000004 60000010 00000000` | the same |
+| 2 (control: watchdog) | `02060000 00000004 60000010 00000000` | the same |
+| 3 (`LDR` from FLASH1 at +2) | `03010000 84338433 84332211 88776655` | the same |
+| 4 (`LDR` from BIOS ROM at +2) | `04010000 04000400 04000004 040001D0` | the same |
+| 5 (`LDR` from WRAM at +2) | `05010000 22118433 84332211 88776655` | the same |
+| 6 (`MOV PC`, FLASH1 target + 2) | `06040000 000013C2 00000010 00000000` | the same |
+| 7 (`LDR PC`, FLASH1) | `07040000 000013C2 00000010 00000000` | the same |
+| 8 (`LDMIA {PC}`, FLASH1) | `08040000 000013C2 00000010 00000000` | the same |
+| 9 (`BX`, FLASH1) | `09040000 000013C2 00000010 00000000` | the same |
+| A (`MOV PC`, WRAM target + 2) | `0A010000 0000000A 00000000 00000000` | the same |
+| B (`LDR PC`, WRAM) | `0B010000 0000000A 00000000 00000000` | the same |
+| C (`LDMIA {PC}`, WRAM) | `0C010000 0000000A 00000000 00000000` | the same |
+| D (`BX`, WRAM) | `0D010000 0000000A 00000000 00000000` | the same |
+| E (the fetch rule, FLASH1) | `0E020000 0000000A 20000010 91FFD332` | the same |
+| F (the fetch rule, WRAM) | `0F020000 0000000A 20000010 00000000` | the same |
+| 10 (aligned `MOV PC` to `0x02004000`) | `10040000 00000004 60000010 00000000` | the same |
+| 11 (`LDR` at `0x02004000`) | `11050000 FFFFEB40 60000010 FDFFC628` | the same |
+| 14 (the decode of the `MSR` space) | `14010000 00000010 20000010 50000010` | the same |
+| 15 (`MSR` with `ASR`, `ROR`, and `RRX`) | `15010000 C0000010 50000010 90000010` | the same |
+| 16 (reserved bits, and `MSR #imm` with bits 12 to 15 clear) | `16010000 50000010 50000010 00000000` | the same |
+| 17 (`E12FF150`) | `17010000 00000001 EEEEEEEE 00000010` | the same |
+| 18 (`E12FFF30`) | `18010000 00000001 EEEEEEEE 00000010` | the same |
+| 19 (`E12F0010`) | `19010000 00000000 EEEEEEEE 00000010` | the same |
+| 1A (`E12FFF70`) | `1A010000 00000001 EEEEEEEE 00000010` | the same |
+
+The same unit, with a build of three blocks (`make BLOCKS=3`), on 2026-10-16. In that build, `0x02004000` is a target in the third block: `MOV r1,PC`, and then `BX r3`.
+
+| probe | real hardware, `BLOCKS=3` | this emulator, `BLOCKS=3` |
+|---|---|---|
+| 10 (aligned `MOV PC` to `0x02004000`) | `10010000 00000008 00000000 00000000` | the same |
+| 11 (`LDR` at `0x02004000`) | `11010000 E1A0E1A0 E1A0100F E12FFF13` | the same |
+| 12 (aligned `MOV PC` to `0x02006000`) | `12040000 00000004 60000010 00000000` | the same |
+| 13 (`LDR` at `0x02006000`) | `13050000 FFFFCB60 60000010 FDFFA628` | the same |
+
+What these values show:
+
+- **A write of a misaligned address to R15 keeps bit 1, in the ARM state.** `MOV PC`, `LDR PC`, `LDMIA {PC}`, and `BX` all give the same result. In WRAM, the instruction at the target reads R15 as the target + `0xA`. GBATEK says that R15 is always force aligned. Real hardware does not do that.
+- **A word read at an address 2 above a word boundary depends on the region.** WRAM gives the aligned word, and the CPU then rotates it, the same as screen 16. FLASH1 and BIOS ROM give the halfword at that address in both halves. The rotation of the CPU does not change that value.
+- **An instruction fetch follows the same rule as a data read.** Probe E puts `13A52F01` at the target in FLASH1. Only the halfword `13A5` in both halves gives `MOVNE r1,#0x94000002`, and row 4 is that value minus the target (`0x02002CD0`). Probe F, with the same target in WRAM, executes the aligned word, and r1 stays 0. Thus in FLASH1, a misaligned R15 does not execute the instruction at the aligned target.
+- **A fetch or a data read in FLASH1 after the end of the app causes an abort.** Probe 10 makes an aligned jump to `0x02004000`, the first address after the 16KB app. The first fetch causes a prefetch abort, with LR = the target + 4. Probe 11 reads `0x02004000` + 2. The first `LDR` (`0x02002B38`) causes a data abort, and it does not write its destination register: r1 keeps `0x628`, its value before the `LDR`.
+- **Probes 6 to 9 are a result of the two rules above.** The CPU executed each duplicated halfword to the end of the app, with bit 1 of R15 set, and it did not branch. The first fetch after the end of the app, at `0x02004002`, caused the prefetch abort.
+- **The kernel sends the prefetch abort to its loop with no exit at `0x040001C8`.** Thus a misaligned R15 in FLASH1 stops the device if no handler of the app catches the abort.
+- **The abort boundary is the end of the blocks of the app, and not a fixed address.** In the build of two blocks, an access at `0x02004000` causes an abort. In the build of three blocks, the same access executes the target, and the abort moves to `0x02006000`. Probe 11 of the build of three blocks also shows the duplicated halfword (`E1A0E1A0`) in the third block.
+- **The decode of `MSR` and `BX` ignores bits that GBATEK gives as fixed.** Probes 14 to 16 show that `MSR` ignores bits 12 to 15, that bits 4 to 11 of the register form are a shift of Rm, and that the CPSR does not keep bits 24 to 27. Probes 17 to 1A show that `cond 0001 0010 1111 1111 xxxx 0xx1 Rm` is `BX`, with no link. Probes 6 to 9 execute `E12FE12F`, which is `MSR CPSR_fsxc,PC,LSR #2`. That word clears the flags before the abort. See "The decode of MSR and BX" in `docs/hardware-notes.md`.
+- **This emulator agrees with each value.** It executes the same words to the same abort address in probes 6 to 9.
+
 ## What these values settle
 
 - **`FLASH_CTRL` gets the fast 1-cycle data-access rate of WRAM.** Screen 2 gives a test value that is exactly equal to its control value. It does not get the slow 2-cycle rate.

@@ -17,9 +17,9 @@ _header_start:
                                  @ a real icon-embedding tool's output against
                                  @ this project's own build (this byte was
                                  @ already 0x11 in both, unchanged).
-    .byte 1                     @ 0x03: block count. It holds how many 8KB blocks this
-                                 @ save occupies. This app is exactly one block
-                                 @ (BODY_SIZE = 0x2000, see pack.c).
+    .byte BLOCKS                @ 0x03: block count. It holds how many 8KB blocks this
+                                 @ save occupies. The Makefile gives BLOCKS. The
+                                 @ default is two blocks (see pack.c).
                                  @
                                  @ NOT reserved, which is what this byte was
                                  @ previously assumed to be and why it was left

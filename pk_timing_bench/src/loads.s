@@ -18,8 +18,11 @@
     .section .text, "ax"
     .global draw_load_screen
 
-@ r0 = screen index (SCREEN_LOAD_LDR to SCREEN_LOAD_LDRSH). The caller cleared VRAM.
+@ r0 = screen index (SCREEN_LOAD_LDR to SCREEN_LAST). The caller cleared VRAM. Screens 19 to 28
+@ go to draw_cpu_screen in cpu.s.
 draw_load_screen:
+    cmp r0, #SCREEN_CPU_FIRST
+    bhs draw_cpu_screen
     push {r4, r5, r6, lr}
     mov r5, r0
 

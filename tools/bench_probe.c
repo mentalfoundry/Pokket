@@ -24,6 +24,9 @@
 
 #define WRAM_RESULTS_BASE 0x200u
 #define WRAM_DIAG_SINGLE_BEFORE 0x280u
+#define WRAM_CPU_RESULTS 0x570u
+#define WRAM_PROBE_SEL 0x610u
+#define WRAM_PROBE_ROWS 0x614u
 
 static uint8_t *read_file(const char *path, size_t *out_size) {
     FILE *f = fopen(path, "rb");
@@ -65,11 +68,13 @@ int main(int argc, char **argv) {
     long frames = 600, f;
     long nav_frames = 600; /* frames spent on the BIOS launch sequence before paging starts */
     long pages = 0;        /* RIGHT taps to issue after launch, to reach a given result screen */
+    long probe = -1;       /* screen 29 only: the probe to select and run with Down (-1 = none) */
     int i;
 
     if (argc < 3) {
-        fprintf(stderr, "usage: %s <bios.bin> <app.mcs> [frames] [pages]\n", argv[0]);
+        fprintf(stderr, "usage: %s <bios.bin> <app.mcs> [frames] [pages] [probe]\n", argv[0]);
         fprintf(stderr, "  pages: screen number to page to after launch (0 = leave wherever it lands)\n");
+        fprintf(stderr, "  probe: with pages = 29, the probe to select and run with Down\n");
         return 1;
     }
     bios = read_file(argv[1], &bios_size);
@@ -83,6 +88,9 @@ int main(int argc, char **argv) {
     }
     if (argc >= 5) {
         pages = atol(argv[4]);
+    }
+    if (argc >= 6) {
+        probe = atol(argv[5]);
     }
 
     ps = psemu_create();
@@ -125,16 +133,34 @@ int main(int argc, char **argv) {
        was ready. */
     if (pages > 0) {
         int attempt;
-        for (attempt = 0; attempt < 16 && psemu_bus_read32(&ps->bus, 0x25Cu) != (uint32_t)pages; attempt++) {
+        /* Screens 28 and 29 are nearer to screen 1 with LEFT, which wraps from screen 1 to the last
+           screen. */
+        uint32_t direction = pages >= 28 ? PSEMU_BUTTON_LEFT : PSEMU_BUTTON_RIGHT;
+        for (attempt = 0; attempt < 32 && psemu_bus_read32(&ps->bus, 0x25Cu) != (uint32_t)pages; attempt++) {
             int k;
             for (k = 0; k < 10; k++) { /* press */
-                psemu_set_buttons(ps, PSEMU_BUTTON_RIGHT);
+                psemu_set_buttons(ps, direction);
                 psemu_run(ps, 33000u);
             }
             for (k = 0; k < 20; k++) { /* release, so the debounce clears */
                 psemu_set_buttons(ps, 0);
                 psemu_run(ps, 33000u);
             }
+        }
+    }
+
+    /* Screen 29 runs a probe only at a press of Down. Write the selection directly, then press Down
+       and release it, the same way as the RIGHT presses above. */
+    if (probe >= 0) {
+        int k;
+        psemu_bus_write32(&ps->bus, WRAM_PROBE_SEL, (uint32_t)probe);
+        for (k = 0; k < 10; k++) {
+            psemu_set_buttons(ps, PSEMU_BUTTON_DOWN);
+            psemu_run(ps, 33000u);
+        }
+        for (k = 0; k < 20; k++) {
+            psemu_set_buttons(ps, 0);
+            psemu_run(ps, 33000u);
         }
     }
 
@@ -207,6 +233,22 @@ int main(int argc, char **argv) {
             printf("  -> expiry-to-write latency %.1f ticks\n", ticks - 1017.0);
         }
     }
+
+    /* Screens 19 to 28 (the CPU screens): the four rows of the screen on the LCD. Each of these screens
+       runs its test when the app draws it. Thus the pages argument selects the test. */
+    printf("cpu screen rows @0x%03X:\n", WRAM_CPU_RESULTS);
+    for (i = 0; i < 4; i++) {
+        printf("  [%d] 0x%08X\n", i, psemu_bus_read32(&ps->bus, WRAM_CPU_RESULTS + (uint32_t)i * 4u));
+    }
+
+    printf("probe rows @0x%03X:\n", WRAM_PROBE_ROWS);
+    for (i = 0; i < 4; i++) {
+        printf("  [%d] 0x%08X\n", i, psemu_bus_read32(&ps->bus, WRAM_PROBE_ROWS + (uint32_t)i * 4u));
+    }
+    /* A probe writes its trap handlers to these kernel slots, and it writes the old values back. */
+    printf("kernel slots: und=0x%08X swi=0x%08X pabt=0x%08X dabt=0x%08X irq=0x%08X\n",
+        psemu_bus_read32(&ps->bus, 0x24u), psemu_bus_read32(&ps->bus, 0x28u), psemu_bus_read32(&ps->bus, 0x2Cu),
+        psemu_bus_read32(&ps->bus, 0x30u), psemu_bus_read32(&ps->bus, 0x38u));
 
     printf("screen:\n");
     print_framebuffer(ps);
