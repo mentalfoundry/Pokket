@@ -333,7 +333,14 @@ static void exec_msr(arm7tdmi_t *cpu, uint32_t instr, uint32_t pc) {
 
     if (to_spsr) {
         uint32_t *spsr = &cpu->spsr_bank[arm_current_bank(cpu)];
+        /* The SPSR keeps only NZCV and the control byte, the same as the CPSR. MSR SPSR_fsxc with
+           FFFFFFFF reads back as F00000FF on real hardware (screen 29 of pk_timing_bench, probe 1B). */
+        byte_mask &= 0xF00000FFu;
         *spsr = (*spsr & ~byte_mask) | (value & byte_mask);
+        /* Mode bit 4 of the SPSR always reads as 1: a write of mode 05 reads back as 15, and C3 reads
+           back as D3 (screen 29 of pk_timing_bench, probe 20). Thus the SPSR cannot hold a 26-bit
+           mode. No test shows the same bit of the CPSR. */
+        *spsr |= 0x10u;
         return;
     }
 
@@ -744,11 +751,11 @@ void arm_execute(arm7tdmi_t *cpu, uint32_t instr, uint32_t pc) {
         return;
     }
 
-    /* BX: cond 0001 0010 1111 1111 xxxx 0xx1 Rm. The CPU ignores bits 8 to 11, 5, and 6. Real hardware
-       branches with E12FFF10, E12FF150, E12FFF30, and E12FFF70, and none of them writes LR. E12FFF30
-       is BLX on ARMv5, and E12FFF70 is BKPT on ARMv5. E12F0010, with bits 12 to 15 clear, does not
-       branch (screen 29 of pk_timing_bench, probes 16 to 1A). */
-    if ((instr & 0x0FFFF090u) == 0x012FF010u) {
+    /* BX: cond 0001 0010 xxxx 1111 xxxx 0xx1 Rm. The CPU ignores bits 16 to 19, 8 to 11, 5, and 6.
+       Real hardware branches with E12FFF10, E12FF150, E12FFF30, E12FFF70, E120FF10, and E12AFF10,
+       and none of them writes LR. E12FFF30 is BLX on ARMv5, and E12FFF70 is BKPT on ARMv5. E12F0010,
+       with bits 12 to 15 clear, does not branch (screen 29 of pk_timing_bench, probes 17 to 1E). */
+    if ((instr & 0x0FF0F090u) == 0x0120F010u) {
         exec_bx(cpu, instr, pc);
         return;
     }

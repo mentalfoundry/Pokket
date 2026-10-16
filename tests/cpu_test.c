@@ -3289,15 +3289,30 @@ static void test_msr_decode(void) {
     assert(flags_after(0xE12FF060u, 0x20000000u, CPSR_C) == 0x90000000u); /* Rm RRX */
     assert(flags_after(0xE128F000u, 0x5F000000u, 0) == 0x50000000u); /* bits 24-27 not kept */
     assert(flags_after(0xE3280450u, 0, 0) == 0x50000000u); /* MSR CPSR_f,#50000000, bits 12-15 = 0 */
+
+    /* The SPSR keeps only NZCV and the control byte (probe 1B). This CPU starts in Supervisor mode. */
+    {
+        psemu_t *ps = make_arm_cpu();
+        ps->cpu.r[0] = 0xFFFFFFFFu;
+        put32(ps, 0x00, 0xE16FF000u); /* MSR SPSR_fsxc, r0 */
+        arm7tdmi_step(&ps->cpu);
+        assert(ps->cpu.spsr_bank[arm_current_bank(&ps->cpu)] == 0xF00000FFu);
+        /* Mode bit 4 of the SPSR always reads as 1 (probe 20). */
+        ps->cpu.r[0] = 0x00000005u;
+        put32(ps, 0x04, 0xE16FF000u); /* MSR SPSR_fsxc, r0 */
+        arm7tdmi_step(&ps->cpu);
+        assert(ps->cpu.spsr_bank[arm_current_bank(&ps->cpu)] == 0x00000015u);
+        psemu_destroy(ps);
+    }
     printf("test_msr_decode OK\n");
 }
 
 static void test_bx_decode(void) {
-    /* BX ignores bits 8 to 11, 5, and 6, and it never writes LR. With bits 12 to 15 clear, the word
-       does not branch (screen 29 of pk_timing_bench, probes 17 to 1A). */
-    const uint32_t branches[3] = {0xE12FF150u, 0xE12FFF30u, 0xE12FFF70u};
+    /* BX ignores bits 16 to 19, 8 to 11, 5, and 6, and it never writes LR. With bits 12 to 15 clear,
+       the word does not branch (screen 29 of pk_timing_bench, probes 17 to 1E). */
+    const uint32_t branches[5] = {0xE12FF150u, 0xE12FFF30u, 0xE12FFF70u, 0xE120FF10u, 0xE12AFF10u};
     int i;
-    for (i = 0; i < 3; i++) {
+    for (i = 0; i < 5; i++) {
         psemu_t *ps = make_arm_cpu();
         ps->cpu.r[0] = 0x200;
         ps->cpu.r[14] = 0xEEEEEEEEu;
