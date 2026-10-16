@@ -163,6 +163,12 @@ void flash_write8(flash_t *flash, uint32_t addr, uint8_t value);
 uint8_t flash1_read8(flash_t *flash, uint32_t addr);
 void flash1_write8(flash_t *flash, uint32_t addr, uint8_t value);
 
+/* 1 if the virtual bank of this FLASH1 offset resolves to a physical block that F_BANK_FLG enables,
+   and 0 if not. F_BANK_FLG holds the blocks of the app. Thus 0 is an address after the end of the
+   app. On real hardware, a fetch or a data read at such an address causes an abort. Real hardware
+   confirms the boundary for an app of 2 blocks and of 3 blocks (screen 29 of pk_timing_bench). */
+int flash1_mapped(const flash_t *flash, uint32_t addr);
+
 /* FLASH_CTRL: the bank-select registers. A disassembly of a real BIOS
    gives them.
    +8 (F_BANK_FLG) is a bitmask of the physical blocks of the app. +0 is

@@ -26,6 +26,12 @@ static uint32_t decode_operand2(arm7tdmi_t *cpu, uint32_t instr, uint32_t pc, in
         int rs = (int)((instr >> 8) & 0xFu);
         amount = arm_read_reg(cpu, rs, pc, 0) & 0xFFu;
         is_immediate_encoding = 0;
+        /* A shift by register takes one more cycle before the operands are read. Thus Rm = R15 reads
+           as the address of the instruction + 12, and not + 8. Real hardware confirms this (screen 20
+           of pk_timing_bench). */
+        if (rm == 15) {
+            rm_value += 4u;
+        }
     } else {
         amount = (instr >> 7) & 0x1Fu;
         is_immediate_encoding = 1;
@@ -51,6 +57,9 @@ static void exec_data_processing(arm7tdmi_t *cpu, uint32_t instr, uint32_t pc) {
     uint32_t op2 = decode_operand2(cpu, instr, pc, &shifter_carry);
     uint32_t op1 = arm_read_reg(cpu, rn, pc, 0);
     uint32_t c_in = (cpu->cpsr & CPSR_C) ? 1u : 0u;
+    if (reg_shift && rn == 15) {
+        op1 += 4u; /* + 12, the same as Rm. See decode_operand2. */
+    }
 
     uint32_t result = 0;
     int write_result = 1;
@@ -148,8 +157,9 @@ static void exec_data_processing(arm7tdmi_t *cpu, uint32_t instr, uint32_t pc) {
 /* A real ARM7TDMI multiply stops early. The stop time depends on the
    value of Rs. When more of the high bytes of Rs are all 0 or all 1, the
    multiply costs less internal cycles (m = 1 to 4).
-   The ARM 32x32->32 and 32x32->64 multiply forms below use this function.
-   The Thumb MUL instruction (thumb_exec.c) also uses it. */
+   MUL, MLA, SMULL, and SMLAL below use this function. The Thumb MUL
+   instruction (thumb_exec.c) also uses it. UMULL and UMLAL use
+   mul_m_cycles_unsigned. */
 uint32_t arm7tdmi_mul_m_cycles(uint32_t rs) {
     if ((rs >> 8) == 0u || (rs >> 8) == 0x00FFFFFFu) {
         return 1u;
@@ -158,6 +168,23 @@ uint32_t arm7tdmi_mul_m_cycles(uint32_t rs) {
         return 2u;
     }
     if ((rs >> 24) == 0u || (rs >> 24) == 0x000000FFu) {
+        return 3u;
+    }
+    return 4u;
+}
+
+/* The same for UMULL and UMLAL. An unsigned multiply stops early only for high bytes of Rs that are
+   all 0. High bytes that are all 1 do not stop it. Real hardware confirms this: UMULL with
+   Rs = FFFFFFFF costs the same as with Rs = 12345678, and SMULL with Rs = FFFFFFFF costs the same as
+   with Rs = 000000FF (screen 25 of pk_timing_bench). */
+static uint32_t mul_m_cycles_unsigned(uint32_t rs) {
+    if ((rs >> 8) == 0u) {
+        return 1u;
+    }
+    if ((rs >> 16) == 0u) {
+        return 2u;
+    }
+    if ((rs >> 24) == 0u) {
         return 3u;
     }
     return 4u;
@@ -194,7 +221,8 @@ static void exec_long_multiply(arm7tdmi_t *cpu, uint32_t instr) {
     int accumulate = (int)((instr >> 21) & 1u);
     int set_flags = (int)((instr >> 20) & 1u);
     uint64_t result;
-    uint32_t m = arm7tdmi_mul_m_cycles(cpu->r[rs]); /* read before rdlo/rdhi writeback in case Rs aliases them */
+    /* Read before the writeback of RdLo and RdHi, because Rs can be one of them. */
+    uint32_t m = is_signed ? arm7tdmi_mul_m_cycles(cpu->r[rs]) : mul_m_cycles_unsigned(cpu->r[rs]);
 
     if (is_signed) {
         result = (uint64_t)((int64_t)(int32_t)cpu->r[rm] * (int64_t)(int32_t)cpu->r[rs]);
@@ -223,11 +251,24 @@ static void exec_swap(arm7tdmi_t *cpu, uint32_t instr, uint32_t pc) {
 
     if (byte) {
         uint8_t old = psemu_bus_read8(cpu->bus, addr);
+        if (cpu->bus->access_abort) {
+            return; /* a data abort: no write, and Rd keeps its value. See arm7tdmi_step. */
+        }
         psemu_bus_write8(cpu->bus, addr, (uint8_t)cpu->r[rm]);
         cpu->r[rd] = old;
     } else {
-        uint32_t old = psemu_bus_read32(cpu->bus, addr & ~3u);
-        psemu_bus_write32(cpu->bus, addr & ~3u, cpu->r[rm]);
+        /* SWP reads the same way as LDR: a misaligned address gives the aligned word, rotated right
+           by 8 bits for each byte of misalignment. The write goes to the aligned word, with no
+           rotation. Real hardware confirms this (screen 19 of pk_timing_bench). */
+        uint32_t old = psemu_bus_read32(cpu->bus, addr);
+        uint32_t rot = (addr & 3u) * 8u;
+        if (cpu->bus->access_abort) {
+            return;
+        }
+        if (rot) {
+            old = (old >> rot) | (old << (32u - rot));
+        }
+        psemu_bus_write32(cpu->bus, addr, cpu->r[rm]);
         cpu->r[rd] = old;
     }
     /* SWP costs 1S+2N+1I.
@@ -244,8 +285,10 @@ static void exec_bx(arm7tdmi_t *cpu, uint32_t instr, uint32_t pc) {
         cpu->cpsr |= CPSR_T;
         target &= ~1u;
     } else {
+        /* A change to the ARM state keeps bit 1 of the target, the same as each other write to R15.
+           Real hardware confirms this (screen 29 of pk_timing_bench, probes 9 and D). The fetch at
+           such an address then depends on the region. See bus_read32_raw in memory.c. */
         cpu->cpsr &= ~CPSR_T;
-        target &= ~3u;
     }
     cpu->r[15] = target;
     /* BX costs 2S+1N. The first 1S is the opcode fetch, which this code
@@ -273,7 +316,13 @@ static void exec_msr(arm7tdmi_t *cpu, uint32_t instr, uint32_t pc) {
         uint32_t rot = ((instr >> 8) & 0xFu) * 2u;
         value = (rot == 0) ? imm8 : ((imm8 >> rot) | (imm8 << (32 - rot)));
     } else {
-        value = arm_read_reg(cpu, (int)(instr & 0xFu), pc, 0);
+        /* Bits 4 to 11 are an immediate shift of Rm, the same as the second operand of a data-processing
+           instruction. Real hardware confirms LSL #0, LSR #2, ASR #1, ROR #4, and RRX (screen 29 of
+           pk_timing_bench, probes 14 and 15). */
+        int carry = (cpu->cpsr & CPSR_C) != 0;
+        arm_shift_result_t sr = arm_apply_shift(arm_read_reg(cpu, (int)(instr & 0xFu), pc, 0),
+                                                (int)((instr >> 5) & 0x3u), (instr >> 7) & 0x1Fu, carry, 1);
+        value = sr.value;
     }
 
     uint32_t byte_mask = 0;
@@ -304,6 +353,10 @@ static void exec_msr(arm7tdmi_t *cpu, uint32_t instr, uint32_t pc) {
            masked for the full runtime of the app. */
         byte_mask &= 0xFF000000u;
     }
+    /* The CPSR keeps only NZCV and the control byte. A write to bits 24 to 27 has no effect, which real
+       hardware confirms (screen 29 of pk_timing_bench, probe 16). This code also keeps bits 8 to 23 at
+       0. No test on real hardware shows those bits. */
+    byte_mask &= 0xF00000FFu;
 
     if ((byte_mask & 0xFFu) && (value & CPSR_MODE_MASK) != (cpu->cpsr & CPSR_MODE_MASK)) {
         arm_set_mode(cpu, value & CPSR_MODE_MASK); /* re-banks r13/r14 for the new mode */
@@ -337,15 +390,28 @@ static void exec_single_transfer(arm7tdmi_t *cpu, uint32_t instr, uint32_t pc) {
         if (byte) {
             value = psemu_bus_read8(cpu->bus, address);
         } else {
-            value = psemu_bus_read32(cpu->bus, address & ~3u);
+            /* The bus gives the result of a misaligned word read, which depends on the region. See
+               bus_read32_raw in memory.c. */
+            value = psemu_bus_read32(cpu->bus, address);
             if (address & 3u) {
                 uint32_t rot = (address & 3u) * 8u;
                 value = (value >> rot) | (value << (32 - rot));
             }
         }
+        if (cpu->bus->access_abort) {
+            /* A data abort. Rd keeps its value, which real hardware confirms (screen 29 of
+               pk_timing_bench). This code also does no base writeback. No test on real hardware
+               shows the base after an abort. */
+            return;
+        }
         arm_write_reg(cpu, rd, value);
     } else {
         uint32_t value = arm_read_reg(cpu, rd, pc, 0);
+        if (rd == 15) {
+            /* A stored R15 is the address of the instruction + 12, and not + 8. Real hardware
+               confirms this for STR, STRH, and STM (screen 20 of pk_timing_bench). */
+            value += 4u;
+        }
         if (byte) {
             psemu_bus_write8(cpu->bus, address, (uint8_t)value);
         } else {
@@ -436,9 +502,15 @@ static void exec_halfword_transfer(arm7tdmi_t *cpu, uint32_t instr, uint32_t pc)
             value = 0;
             break;
         }
+        if (cpu->bus->access_abort) {
+            return; /* a data abort. See exec_single_transfer. */
+        }
         arm_write_reg(cpu, rd, value);
     } else {
         uint32_t value = arm_read_reg(cpu, rd, pc, 0);
+        if (rd == 15) {
+            value += 4u; /* + 12. See exec_single_transfer. */
+        }
         psemu_bus_write16(cpu->bus, address & ~1u, (uint16_t)value); /* STRH */
     }
 
@@ -466,7 +538,7 @@ static void exec_halfword_transfer(arm7tdmi_t *cpu, uint32_t instr, uint32_t pc)
 static uint32_t read_user_bank_reg(arm7tdmi_t *cpu, int reg, uint32_t pc) {
     uint32_t mode = cpu->cpsr & CPSR_MODE_MASK;
     if (reg == 15) {
-        return arm_read_reg(cpu, 15, pc, 0);
+        return arm_read_reg(cpu, 15, pc, 0) + 4u; /* + 12. See exec_single_transfer. */
     }
     if (mode == ARM_MODE_USR || mode == ARM_MODE_SYS) {
         return cpu->r[reg];
@@ -501,6 +573,38 @@ static void write_user_bank_reg(arm7tdmi_t *cpu, int reg, uint32_t value) {
     cpu->r[reg] = value;
 }
 
+/* An LDM or STM with an empty register list. On ARMv4, the instruction transfers R15 only, at the
+   lowest address of a block of 16 words, and the base moves by 0x40. Real hardware confirms this for
+   STMIA and LDMIA with writeback (screen 26 of pk_timing_bench): STMIA stores R15 at the base as the
+   address of the instruction + 12, LDMIA loads R15 from the base, and each one adds 0x40 to the base.
+   No test on real hardware confirms IB, DA, or DB. */
+static void exec_block_transfer_empty(arm7tdmi_t *cpu, int pre_index, int up, int writeback, int load, int rn,
+                                      uint32_t pc) {
+    uint32_t base = cpu->r[rn];
+    uint32_t addr;
+    if (up) {
+        addr = pre_index ? base + 4u : base;
+    } else {
+        addr = pre_index ? base - 0x40u : base - 0x3Cu;
+    }
+    if (load) {
+        uint32_t value = psemu_bus_read32(cpu->bus, addr & ~3u);
+        if (cpu->bus->access_abort) {
+            return; /* a data abort. See exec_single_transfer. */
+        }
+        cpu->r[15] = value;
+    } else {
+        psemu_bus_write32(cpu->bus, addr, arm_read_reg(cpu, 15, pc, 0) + 4u);
+    }
+    if (writeback && rn != 15) {
+        cpu->r[rn] = up ? base + 0x40u : base - 0x40u;
+    }
+    if (load) {
+        /* The same "nS+1N+1I, plus a pipeline refill" shape as an LDM that loads the PC. */
+        arm7tdmi_add_cycles(cpu, 1u + 2u * psemu_region_fetch_cycles(cpu->r[15], (cpu->cpsr & CPSR_T) != 0));
+    }
+}
+
 static void exec_block_transfer(arm7tdmi_t *cpu, uint32_t instr, uint32_t pc) {
     int pre_index = (int)((instr >> 24) & 1u);
     int up = (int)((instr >> 23) & 1u);
@@ -518,8 +622,18 @@ static void exec_block_transfer(arm7tdmi_t *cpu, uint32_t instr, uint32_t pc) {
         }
     }
     if (count == 0) {
-        return; /* empty register list is architecturally unpredictable */
+        exec_block_transfer_empty(cpu, pre_index, up, writeback, load, rn, pc);
+        return;
     }
+
+    /* The base register in the list, with writeback. Real hardware confirms each rule, with the base
+       first in the list and with the base last (screen 21 of pk_timing_bench):
+       - LDM does no writeback. Thus the base register keeps the value that the LDM loaded.
+       - STM stores the old base if the base is the first register of the list. If not, it stores the
+         new base, which the writeback then writes. */
+    uint32_t new_base = up ? base + (uint32_t)count * 4u : base - (uint32_t)count * 4u;
+    int base_in_list = (int)((reg_list >> rn) & 1u);
+    int store_new_base = writeback && base_in_list && (reg_list & ((1u << rn) - 1u)) != 0;
 
     /* S set with the PC absent from the list is the "^" user-bank form. The transfer moves the
        registers of User mode, and not the banked registers of the current mode. This is the method
@@ -545,6 +659,12 @@ static void exec_block_transfer(arm7tdmi_t *cpu, uint32_t instr, uint32_t pc) {
         }
         if (load) {
             uint32_t value = psemu_bus_read32(cpu->bus, addr & ~3u);
+            if (cpu->bus->access_abort) {
+                /* A data abort. The registers that loaded before the abort keep their new values,
+                   and there is no writeback. No test on real hardware shows the registers after an
+                   aborted LDM. See exec_single_transfer. */
+                return;
+            }
             if (user_bank) {
                 write_user_bank_reg(cpu, reg, value);
             } else {
@@ -554,8 +674,12 @@ static void exec_block_transfer(arm7tdmi_t *cpu, uint32_t instr, uint32_t pc) {
             uint32_t value;
             if (user_bank) {
                 value = read_user_bank_reg(cpu, reg, pc);
+            } else if (reg == 15) {
+                value = arm_read_reg(cpu, 15, pc, 0) + 4u; /* + 12. See exec_single_transfer. */
+            } else if (reg == rn && store_new_base) {
+                value = new_base;
             } else {
-                value = (reg == 15) ? arm_read_reg(cpu, 15, pc, 0) : cpu->r[reg];
+                value = cpu->r[reg];
             }
             psemu_bus_write32(cpu->bus, addr & ~3u, value);
         }
@@ -564,8 +688,8 @@ static void exec_block_transfer(arm7tdmi_t *cpu, uint32_t instr, uint32_t pc) {
         }
     }
 
-    if (writeback && rn != 15) {
-        cpu->r[rn] = up ? base + (uint32_t)count * 4u : base - (uint32_t)count * 4u;
+    if (writeback && rn != 15 && !(load && base_in_list)) {
+        cpu->r[rn] = new_base;
     }
 
     /* "LDM ...,{...,PC}^" is the second standard exception-return method.
@@ -620,7 +744,11 @@ void arm_execute(arm7tdmi_t *cpu, uint32_t instr, uint32_t pc) {
         return;
     }
 
-    if ((instr & 0x0FFFFFF0u) == 0x012FFF10u) {
+    /* BX: cond 0001 0010 1111 1111 xxxx 0xx1 Rm. The CPU ignores bits 8 to 11, 5, and 6. Real hardware
+       branches with E12FFF10, E12FF150, E12FFF30, and E12FFF70, and none of them writes LR. E12FFF30
+       is BLX on ARMv5, and E12FFF70 is BKPT on ARMv5. E12F0010, with bits 12 to 15 clear, does not
+       branch (screen 29 of pk_timing_bench, probes 16 to 1A). */
+    if ((instr & 0x0FFFF090u) == 0x012FF010u) {
         exec_bx(cpu, instr, pc);
         return;
     }
@@ -644,12 +772,22 @@ void arm_execute(arm7tdmi_t *cpu, uint32_t instr, uint32_t pc) {
         exec_mrs(cpu, instr);
         return;
     }
-    if ((instr & 0x0DB0F000u) == 0x0120F000u) {
+    /* MSR: cond 00I1 0R10 field xxxx operand. The CPU ignores bits 12 to 15, for the immediate form
+       and for the register form. The register form needs bit 4 clear. Real hardware confirms this
+       (screen 29 of pk_timing_bench, probes 14 and 16). With bit 4 set, the BX test above applies. */
+    if ((instr & 0x0DB00000u) == 0x01200000u && ((instr & (1u << 25)) || !(instr & 0x10u))) {
         exec_msr(cpu, instr, pc);
         return;
     }
     if ((instr & 0x0C000000u) == 0x00000000u) {
         exec_data_processing(cpu, instr, pc);
+        return;
+    }
+    /* cond 011x xxxx xxxx xxxx xxxx xxxx xxx1 xxxx is undefined on ARMv4. Without this test, the
+       LDR/STR decode below takes it as a transfer with a register-specified shift. Real hardware
+       confirms the exception for 0xE7F000F0 (screen 28 of pk_timing_bench). */
+    if ((instr & 0x0E000010u) == 0x06000010u) {
+        arm_enter_undefined(cpu, pc + 4u);
         return;
     }
     if ((instr & 0x0C000000u) == 0x04000000u) {

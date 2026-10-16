@@ -2905,6 +2905,422 @@ static void test_clk_stop_halts_until_a_button_wakes_it(void) {
     printf("test_clk_stop_halts_until_a_button_wakes_it OK\n");
 }
 
+/* The tests below hold CPU behaviors that real hardware confirms with screens 19 to 29 of
+   pk_timing_bench. Each expected value is the real-hardware value. See
+   pk_timing_bench/VERIFICATION.md and docs/hardware-notes.md, "CPU". */
+
+/* The data of screens 16 to 19: the bytes 11 22 33 84 55 66 77 88. */
+static void put_load_data(psemu_t *ps, uint32_t addr) {
+    put32(ps, addr, 0x84332211u);
+    put32(ps, addr + 4, 0x88776655u);
+}
+
+/* User mode, with I and F clear. The bench runs in User mode. */
+static void enter_user_mode(psemu_t *ps) {
+    arm_set_mode(&ps->cpu, ARM_MODE_USR);
+    ps->cpu.cpsr &= ~(CPSR_I | CPSR_F);
+}
+
+static void test_arm_swp_misaligned(void) {
+    /* SWP reads the same way as LDR: the aligned word, rotated. It writes the aligned word, with no
+       rotation (screen 19). */
+    psemu_t *ps = make_arm_cpu();
+    const uint32_t swp = 0xE1031092u; /* SWP r1, r2, [r3] */
+    ps->cpu.r[2] = 0xA1B2C3D4u;
+
+    put_load_data(ps, 0x100);
+    ps->cpu.r[3] = 0x101;
+    put32(ps, 0, swp);
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[1] == 0x11843322u);
+    assert(psemu_bus_read32(&ps->bus, 0x100) == 0xA1B2C3D4u);
+    assert(psemu_bus_read32(&ps->bus, 0x104) == 0x88776655u);
+
+    put_load_data(ps, 0x100);
+    ps->cpu.r[3] = 0x103;
+    put32(ps, 4, swp);
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[1] == 0x33221184u);
+
+    psemu_destroy(ps);
+    printf("test_arm_swp_misaligned OK\n");
+}
+
+static void test_arm_r15_reads_12_ahead(void) {
+    /* R15 reads as the address of the instruction + 12 for an ALU operand with a shift by register,
+       and as a stored register of STR, STRH, and STM. The other forms read + 8 (screen 20). */
+    psemu_t *ps = make_arm_cpu();
+    ps->cpu.r[2] = 0;
+    ps->cpu.r[3] = 0;
+    ps->cpu.r[5] = 0x200;
+
+    put32(ps, 0x00, 0xE08F1213u); /* ADD r1, pc, r3, LSL r2 */
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[1] == 0x00u + 12u);
+    put32(ps, 0x04, 0xE1A0121Fu); /* MOV r1, pc, LSL r2 */
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[1] == 0x04u + 12u);
+    put32(ps, 0x08, 0xE08F1003u); /* ADD r1, pc, r3 */
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[1] == 0x08u + 8u);
+    put32(ps, 0x0C, 0xE1A0100Fu); /* MOV r1, pc */
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[1] == 0x0Cu + 8u);
+
+    put32(ps, 0x10, 0xE585F000u); /* STR pc, [r5] */
+    arm7tdmi_step(&ps->cpu);
+    assert(psemu_bus_read32(&ps->bus, 0x200) == 0x10u + 12u);
+    put32(ps, 0x14, 0xE1C5F0B0u); /* STRH pc, [r5] */
+    arm7tdmi_step(&ps->cpu);
+    assert(psemu_bus_read16(&ps->bus, 0x200) == 0x14u + 12u);
+    put32(ps, 0x18, 0xE8858000u); /* STMIA r5, {pc} */
+    arm7tdmi_step(&ps->cpu);
+    assert(psemu_bus_read32(&ps->bus, 0x200) == 0x18u + 12u);
+
+    psemu_destroy(ps);
+    printf("test_arm_r15_reads_12_ahead OK\n");
+}
+
+static void test_ldm_stm_base_in_list(void) {
+    /* With writeback and the base in the list: LDM does no writeback, and STM stores the old base
+       only if the base is the first register of the list. The same rules apply to ARM and to Thumb
+       (screens 21 and 22). */
+    const uint32_t arm_ops[4] = {0xE8B00003u, 0xE8B10003u, 0xE8A00003u, 0xE8A10003u};
+    const uint16_t thumb_ops[4] = {0xC803u, 0xC903u, 0xC003u, 0xC103u};
+    int thumb;
+
+    for (thumb = 0; thumb < 2; thumb++) {
+        psemu_t *ps = thumb ? make_thumb_cpu() : make_arm_cpu();
+        uint32_t step = thumb ? 2u : 4u;
+        int i;
+        for (i = 0; i < 4; i++) {
+            if (thumb) {
+                put16(ps, (uint32_t)i * step, thumb_ops[i]);
+            } else {
+                put32(ps, (uint32_t)i * step, arm_ops[i]);
+            }
+        }
+        put32(ps, 0x200, 0x11111111u);
+        put32(ps, 0x204, 0x22222222u);
+
+        /* LDMIA r0!,{r0,r1}: r0 keeps the loaded value. */
+        ps->cpu.r[0] = 0x200;
+        arm7tdmi_step(&ps->cpu);
+        assert(ps->cpu.r[0] == 0x11111111u);
+        /* LDMIA r1!,{r0,r1}: r1 keeps the loaded value. */
+        ps->cpu.r[1] = 0x200;
+        arm7tdmi_step(&ps->cpu);
+        assert(ps->cpu.r[1] == 0x22222222u);
+        /* STMIA r0!,{r0,r1}: r0 is first, thus the old base. */
+        ps->cpu.r[0] = 0x200;
+        arm7tdmi_step(&ps->cpu);
+        assert(psemu_bus_read32(&ps->bus, 0x200) == 0x200u);
+        assert(ps->cpu.r[0] == 0x208u);
+        /* STMIA r1!,{r0,r1}: r1 is not first, thus the new base. */
+        ps->cpu.r[1] = 0x200;
+        arm7tdmi_step(&ps->cpu);
+        assert(psemu_bus_read32(&ps->bus, 0x204) == 0x208u);
+        assert(ps->cpu.r[1] == 0x208u);
+
+        psemu_destroy(ps);
+    }
+    printf("test_ldm_stm_base_in_list OK\n");
+}
+
+static void test_thumb_push_misaligned_sp(void) {
+    /* A PUSH with a misaligned SP writes the aligned word. SP keeps its misaligned value, and a POP
+       from it reads the aligned word (screen 23). */
+    psemu_t *ps = make_thumb_cpu();
+    put32(ps, 0x200, 0);
+    put32(ps, 0x204, 0);
+    ps->cpu.r[13] = 0x206;
+    ps->cpu.r[1] = 0x11223344u;
+    put16(ps, 0, 0xB402u); /* PUSH {r1} */
+    put16(ps, 2, 0xBC04u); /* POP {r2} */
+
+    arm7tdmi_step(&ps->cpu);
+    assert(psemu_bus_read32(&ps->bus, 0x200) == 0x11223344u);
+    assert(psemu_bus_read32(&ps->bus, 0x204) == 0u);
+    assert(ps->cpu.r[13] == 0x202u);
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[2] == 0x11223344u);
+
+    psemu_destroy(ps);
+    printf("test_thumb_push_misaligned_sp OK\n");
+}
+
+/* The cycles of one MULS r1,r2 (Thumb) with these operands, in WRAM. */
+static uint32_t thumb_mul_cycles(uint32_t rd, uint32_t rs) {
+    psemu_t *ps = make_thumb_cpu();
+    uint32_t cycles;
+    ps->cpu.r[1] = rd;
+    ps->cpu.r[2] = rs;
+    put16(ps, 0, 0x4351u); /* MUL r1, r2: Rd = r1, Rs = r2 */
+    cycles = arm7tdmi_step(&ps->cpu);
+    psemu_destroy(ps);
+    return cycles;
+}
+
+/* The cycles of one long multiply (ARM) with this Rs, in WRAM. */
+static uint32_t long_mul_cycles(uint32_t instr, uint32_t rs) {
+    psemu_t *ps = make_arm_cpu();
+    uint32_t cycles;
+    ps->cpu.r[0] = 0x55;
+    ps->cpu.r[6] = rs;
+    put32(ps, 0, instr);
+    cycles = arm7tdmi_step(&ps->cpu);
+    psemu_destroy(ps);
+    return cycles;
+}
+
+static void test_multiply_cost_rules(void) {
+    /* The cost of a Thumb MUL follows the incoming Rd, and not Rs (screen 24). */
+    assert(thumb_mul_cycles(5u, 0x12345678u) == thumb_mul_cycles(5u, 5u));
+    assert(thumb_mul_cycles(0x12345678u, 5u) == thumb_mul_cycles(0x12345678u, 0x12345678u));
+    assert(thumb_mul_cycles(0x12345678u, 5u) > thumb_mul_cycles(5u, 5u));
+
+    /* UMULL stops early only for high bytes of Rs that are all 0. SMULL also stops early for high
+       bytes that are all 1 (screen 25). */
+    const uint32_t umull = 0xE0821690u; /* UMULL r1, r2, r0, r6 */
+    const uint32_t smull = 0xE0C21690u; /* SMULL r1, r2, r0, r6 */
+    assert(long_mul_cycles(umull, 0xFFFFFFFFu) == long_mul_cycles(umull, 0x12345678u));
+    assert(long_mul_cycles(smull, 0xFFFFFFFFu) == long_mul_cycles(umull, 0x000000FFu));
+    assert(long_mul_cycles(umull, 0xFFFFFFFFu) > long_mul_cycles(umull, 0x000000FFu));
+    printf("test_multiply_cost_rules OK\n");
+}
+
+static void test_empty_register_list(void) {
+    /* An LDM or STM with an empty list transfers R15, and the base moves by 0x40. A stored R15 is the
+       address of the instruction + 12 in the ARM state, and + 6 in the Thumb state (screen 26). */
+    psemu_t *ps = make_arm_cpu();
+
+    put32(ps, 0x00, 0xE8A00000u); /* STMIA r0!, {} */
+    ps->cpu.r[0] = 0x200;
+    arm7tdmi_step(&ps->cpu);
+    assert(psemu_bus_read32(&ps->bus, 0x200) == 0x00u + 12u);
+    assert(ps->cpu.r[0] == 0x240u);
+
+    put32(ps, 0x04, 0xE8B00000u); /* LDMIA r0!, {} */
+    put32(ps, 0x300, 0x80u);
+    ps->cpu.r[0] = 0x300;
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[15] == 0x80u);
+    assert(ps->cpu.r[0] == 0x340u);
+    psemu_destroy(ps);
+
+    ps = make_thumb_cpu();
+    put16(ps, 0x00, 0xC000u); /* STMIA r0!, {} */
+    ps->cpu.r[0] = 0x200;
+    arm7tdmi_step(&ps->cpu);
+    assert(psemu_bus_read32(&ps->bus, 0x200) == 0x00u + 6u);
+    assert(ps->cpu.r[0] == 0x240u);
+
+    put16(ps, 0x02, 0xC800u); /* LDMIA r0!, {} */
+    put32(ps, 0x300, 0x81u);
+    ps->cpu.r[0] = 0x300;
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[15] == 0x80u);
+    assert(ps->cpu.cpsr & CPSR_T);
+    assert(ps->cpu.r[0] == 0x340u);
+    psemu_destroy(ps);
+    printf("test_empty_register_list OK\n");
+}
+
+static void test_undefined_instruction_exception(void) {
+    /* 0xE7F000F0 (ARM) and 0xDE00 (Thumb) cause the undefined-instruction exception. The handler
+       runs in Undefined mode with I set. LR is the address of the instruction + 4 in the ARM state,
+       and + 2 in the Thumb state (screen 28). */
+    psemu_t *ps = make_arm_cpu();
+    enter_user_mode(ps);
+    put32(ps, 0x40, 0xE7F000F0u);
+    ps->cpu.r[15] = 0x40;
+    arm7tdmi_step(&ps->cpu);
+    assert(!psemu_cpu_faulted(ps));
+    assert(ps->cpu.r[15] == ARM_UND_VECTOR);
+    assert(ps->cpu.r[14] == 0x40u + 4u);
+    assert((ps->cpu.cpsr & 0xFFu) == 0x9Bu);
+    assert((ps->cpu.spsr_bank[arm_current_bank(&ps->cpu)] & 0xFFu) == 0x10u);
+    psemu_destroy(ps);
+
+    ps = make_thumb_cpu();
+    enter_user_mode(ps);
+    put16(ps, 0x40, 0xDE00u);
+    ps->cpu.r[15] = 0x40;
+    arm7tdmi_step(&ps->cpu);
+    assert(!psemu_cpu_faulted(ps));
+    assert(ps->cpu.r[15] == ARM_UND_VECTOR);
+    assert(ps->cpu.r[14] == 0x40u + 2u);
+    assert((ps->cpu.cpsr & 0xFFu) == 0x9Bu);
+    assert((ps->cpu.spsr_bank[arm_current_bank(&ps->cpu)] & 0xFFu) == 0x30u);
+    psemu_destroy(ps);
+    printf("test_undefined_instruction_exception OK\n");
+}
+
+static void test_misaligned_r15_in_wram(void) {
+    /* A write of a misaligned address to R15 keeps bit 1, for BX also. In WRAM, the fetch gives the
+       aligned word. Thus MOV r1,PC at the aligned target reads the target + 0xA (screen 29, probes A
+       to D). */
+    psemu_t *ps = make_arm_cpu();
+    put32(ps, 0x100, 0xE1A0100Fu); /* MOV r1, pc */
+    put32(ps, 0x00, 0xE12FFF10u);  /* BX r0 */
+    ps->cpu.r[0] = 0x102;
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[15] == 0x102u);
+    assert(!(ps->cpu.cpsr & CPSR_T));
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[1] == 0x100u + 0xAu);
+    psemu_destroy(ps);
+    printf("test_misaligned_r15_in_wram OK\n");
+}
+
+/* An app of one block in FLASH1: physical block 1. */
+static psemu_t *make_cpu_with_one_block_app(void) {
+    psemu_t *ps = make_arm_cpu();
+    psemu_bus_write32(&ps->bus, PSEMU_FLASH_CTRL_BASE + 8, 1u << 1); /* F_BANK_FLG */
+    psemu_bus_write32(&ps->bus, PSEMU_FLASH_CTRL_BASE + 0, 2u);      /* commit */
+    return ps;
+}
+
+static void test_misaligned_word_access_in_flash1_and_bios(void) {
+    /* In FLASH1 and in BIOS ROM, a word access at an address with bit 1 set gives the halfword at
+       that address in both halves (screen 29, probes 3, 4, and E). In WRAM, the same LDR gives the
+       aligned word, rotated (probe 5, and screen 16). */
+    psemu_t *ps = make_cpu_with_one_block_app();
+    psemu_bus_write32(&ps->bus, PSEMU_FLASH2_BASE + 0x2100, 0x84332211u);
+    psemu_bus_write32(&ps->bus, PSEMU_FLASH2_BASE + 0x2104, 0x88776655u);
+    ps->bus.bios[0x210] = 0x04;
+    ps->bus.bios[0x211] = 0x00;
+    ps->bus.bios[0x212] = 0x00;
+    ps->bus.bios[0x213] = 0x04;
+    put_load_data(ps, 0x200);
+
+    put32(ps, 0x00, 0xE5901000u); /* LDR r1, [r0] */
+    put32(ps, 0x04, 0xE5901000u);
+    put32(ps, 0x08, 0xE5901000u);
+    ps->cpu.r[0] = PSEMU_FLASH1_BASE + 0x102;
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[1] == 0x84338433u);
+    ps->cpu.r[0] = PSEMU_BIOS_BASE + 0x212;
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[1] == 0x04000400u);
+    ps->cpu.r[0] = 0x202;
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[1] == 0x22118433u);
+
+    /* A fetch in FLASH1 at a word + 2. 13A52F01 gives the halfword 13A5 in both halves, which is
+       MOVNE r1,#0x94000002. Then the halfword E7F0 in both halves is undefined. */
+    psemu_bus_write32(&ps->bus, PSEMU_FLASH2_BASE + 0x2200, 0x13A52F01u);
+    psemu_bus_write32(&ps->bus, PSEMU_FLASH2_BASE + 0x2204, 0xE7F0E7F0u);
+    ps->cpu.cpsr = (ps->cpu.cpsr & ~(CPSR_Z | CPSR_N | CPSR_V)) | CPSR_C;
+    ps->cpu.r[1] = 0;
+    ps->cpu.r[15] = PSEMU_FLASH1_BASE + 0x202;
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[1] == 0x94000002u);
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[15] == ARM_UND_VECTOR);
+    assert(ps->cpu.r[14] == PSEMU_FLASH1_BASE + 0x200u + 0xAu);
+
+    psemu_destroy(ps);
+    printf("test_misaligned_word_access_in_flash1_and_bios OK\n");
+}
+
+static void test_flash1_access_after_the_app_aborts(void) {
+    /* A fetch in FLASH1 after the last block of the app causes a prefetch abort, with LR = the
+       address + 4. A data read there causes a data abort, with LR = the address of the LDR + 8, and
+       the destination register keeps its value (screen 29, probes 10 to 13, with apps of 2 and 3
+       blocks). */
+    psemu_t *ps = make_cpu_with_one_block_app();
+    enter_user_mode(ps);
+    ps->cpu.r[15] = PSEMU_FLASH1_BASE + 0x2000;
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[15] == ARM_PABT_VECTOR);
+    assert(ps->cpu.r[14] == PSEMU_FLASH1_BASE + 0x2004u);
+    assert((ps->cpu.cpsr & CPSR_MODE_MASK) == ARM_MODE_ABT);
+    psemu_destroy(ps);
+
+    ps = make_cpu_with_one_block_app();
+    enter_user_mode(ps);
+    put32(ps, 0x40, 0xE5901000u); /* LDR r1, [r0] */
+    ps->cpu.r[0] = PSEMU_FLASH1_BASE + 0x2002;
+    ps->cpu.r[1] = 0x628;
+    ps->cpu.r[15] = 0x40;
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[15] == ARM_DABT_VECTOR);
+    assert(ps->cpu.r[14] == 0x40u + 8u);
+    assert((ps->cpu.cpsr & CPSR_MODE_MASK) == ARM_MODE_ABT);
+    arm_set_mode(&ps->cpu, ARM_MODE_USR);
+    assert(ps->cpu.r[1] == 0x628u);
+    psemu_destroy(ps);
+
+    /* With a second block, the same address is in the app, and the fetch does not abort. */
+    ps = make_arm_cpu();
+    psemu_bus_write32(&ps->bus, PSEMU_FLASH_CTRL_BASE + 8, (1u << 1) | (1u << 2));
+    psemu_bus_write32(&ps->bus, PSEMU_FLASH_CTRL_BASE + 0, 2u);
+    psemu_bus_write32(&ps->bus, PSEMU_FLASH2_BASE + 0x4000, 0xE1A0100Fu); /* MOV r1, pc */
+    ps->cpu.r[15] = PSEMU_FLASH1_BASE + 0x2000;
+    arm7tdmi_step(&ps->cpu);
+    assert(ps->cpu.r[1] == PSEMU_FLASH1_BASE + 0x2008u);
+    psemu_destroy(ps);
+    printf("test_flash1_access_after_the_app_aborts OK\n");
+}
+
+/* The flags of the CPSR after one ARM word in User mode, with r0 = rm and the flags preset. */
+static uint32_t flags_after(uint32_t instr, uint32_t rm, uint32_t preset_flags) {
+    psemu_t *ps = make_arm_cpu();
+    uint32_t flags;
+    enter_user_mode(ps);
+    ps->cpu.cpsr = (ps->cpu.cpsr & 0x0FFFFFFFu) | preset_flags;
+    ps->cpu.r[0] = rm;
+    put32(ps, 0x40, instr);
+    ps->cpu.r[15] = 0x40;
+    arm7tdmi_step(&ps->cpu);
+    flags = ps->cpu.cpsr & 0xFF000000u;
+    psemu_destroy(ps);
+    return flags;
+}
+
+static void test_msr_decode(void) {
+    /* MSR ignores bits 12 to 15. In the register form, bits 4 to 11 are an immediate shift of Rm. The
+       CPSR does not keep bits 24 to 27 (screen 29 of pk_timing_bench, probes 14 to 16). */
+    assert(flags_after(0xE12FE120u, 0xA0000000u, 0) == 0x20000000u); /* Rm LSR #2, bits 12-15 = E */
+    assert(flags_after(0xE12F0000u, 0x50000000u, 0) == 0x50000000u); /* bits 12-15 = 0 */
+    assert(flags_after(0xE12FF0C0u, 0x80000000u, 0) == 0xC0000000u); /* Rm ASR #1 */
+    assert(flags_after(0xE12FF260u, 0x00000005u, 0) == 0x50000000u); /* Rm ROR #4 */
+    assert(flags_after(0xE12FF060u, 0x20000000u, CPSR_C) == 0x90000000u); /* Rm RRX */
+    assert(flags_after(0xE128F000u, 0x5F000000u, 0) == 0x50000000u); /* bits 24-27 not kept */
+    assert(flags_after(0xE3280450u, 0, 0) == 0x50000000u); /* MSR CPSR_f,#50000000, bits 12-15 = 0 */
+    printf("test_msr_decode OK\n");
+}
+
+static void test_bx_decode(void) {
+    /* BX ignores bits 8 to 11, 5, and 6, and it never writes LR. With bits 12 to 15 clear, the word
+       does not branch (screen 29 of pk_timing_bench, probes 17 to 1A). */
+    const uint32_t branches[3] = {0xE12FF150u, 0xE12FFF30u, 0xE12FFF70u};
+    int i;
+    for (i = 0; i < 3; i++) {
+        psemu_t *ps = make_arm_cpu();
+        ps->cpu.r[0] = 0x200;
+        ps->cpu.r[14] = 0xEEEEEEEEu;
+        put32(ps, 0x40, branches[i]);
+        ps->cpu.r[15] = 0x40;
+        arm7tdmi_step(&ps->cpu);
+        assert(ps->cpu.r[15] == 0x200u);
+        assert(ps->cpu.r[14] == 0xEEEEEEEEu);
+        assert(!(ps->cpu.cpsr & CPSR_T));
+        psemu_destroy(ps);
+    }
+    {
+        psemu_t *ps = make_arm_cpu();
+        ps->cpu.r[0] = 0x200;
+        put32(ps, 0x40, 0xE12F0010u);
+        ps->cpu.r[15] = 0x40;
+        arm7tdmi_step(&ps->cpu);
+        assert(ps->cpu.r[15] == 0x44u);
+        psemu_destroy(ps);
+    }
+    printf("test_bx_decode OK\n");
+}
+
 int main(void) {
     test_arm_data_processing();
     test_arm_long_multiply_and_swap();
@@ -2976,6 +3392,18 @@ int main(void) {
     test_rtc_keeps_real_time();
     test_rtc_date_rolls_over_at_midnight();
     test_clk_stop_halts_until_a_button_wakes_it();
+    test_arm_swp_misaligned();
+    test_arm_r15_reads_12_ahead();
+    test_ldm_stm_base_in_list();
+    test_thumb_push_misaligned_sp();
+    test_multiply_cost_rules();
+    test_empty_register_list();
+    test_undefined_instruction_exception();
+    test_misaligned_r15_in_wram();
+    test_misaligned_word_access_in_flash1_and_bios();
+    test_flash1_access_after_the_app_aborts();
+    test_msr_decode();
+    test_bx_decode();
     printf("all cpu tests passed\n");
     return 0;
 }

@@ -21,7 +21,7 @@ The CPU is an ARM7TDMI (ARM and Thumb instruction sets), fabricated by Atmel.
 
 **GBATEK is the CPU documentation of this emulator.** psx-spx gives the hardware of the PocketStation, but it does not give the instruction set of its CPU. The Game Boy Advance uses the same ARM7TDMI, and GBATEK documents that CPU in its "ARM CPU Reference" sections. Those sections give the details that real software can depend on, for example the result of a misaligned load ("ARM CPU Memory Alignments"). The other parts of GBATEK are for the Game Boy Advance and the Nintendo DS. They do not apply to the PocketStation.
 
-GBATEK is documentation, thus it is the third source in the order of trust above. A test on real hardware stays the authority. For the misaligned loads below, the rules of GBATEK and the results of screens 16 to 18 of `pk_timing_bench` on a real unit agree.
+GBATEK is documentation, thus it is the third source in the order of trust above. A test on real hardware stays the authority. Screens 16 to 29 of `pk_timing_bench` test the rules of GBATEK on a real unit. Real hardware agrees with GBATEK in each test except two. A write of a misaligned address to R15 is not force aligned (see "Misaligned R15" below). The decode of `MSR` and `BX` ignores bits that GBATEK gives as fixed (see "The decode of MSR and BX" below).
 
 At reset, the CPU starts in Supervisor mode, in the ARM state. The first approximately 12 instructions enter FIQ mode, then IRQ mode, and then return to Supervisor mode. Each mode entry initializes the banked stack pointer (SP) of that mode. A real BIOS trace confirms this.
 
@@ -44,6 +44,77 @@ At reset, the CPU starts in Supervisor mode, in the ARM state. The first approxi
 
   Two real apps depend on these rules, and each one uses only the low byte of the result. The font-glyph routine of a real homebrew ID editor reads a byte-packed table one byte at a time, with `LDRH Rd,[Rn],#1`, which is a post-increment of 1 and not 2. The menu routine of a real fighting-game app reads a table of sprite frame numbers with a Thumb `LDR Rd,[Rb,Ro]` at each byte address. Without the `LDR` rotation, each group of four menu entries shows the same graphic. Real hardware shows a different graphic for each entry. Because these apps use only the low byte, they cannot show the upper bits of an `LDRH` result. Only screen 17 shows them.
 - **FIQ has a higher priority than IRQ.** FIQ entry sets both `CPSR.F` and `CPSR.I`. IRQ entry, SWI entry, and abort entry set only `CPSR.I`. See "Interrupt controller" below.
+
+**Real ARM7TDMI behaviors that `pk_timing_bench` confirms on real hardware.** A comparison of this CPU core with GBATEK found each one. Screens 19 to 29 of `pk_timing_bench` measure each one on a real unit. See `pk_timing_bench/VERIFICATION.md` for each value:
+
+- **A misaligned `SWP` reads the same way as `LDR`**: the aligned word, rotated right by 8 bits for each byte of misalignment. The write goes to the aligned word, with no rotation (screen 19). See `exec_swap` and `test_arm_swp_misaligned`.
+- **R15 reads as the address of the instruction + 12** in two cases: as an ALU operand (`Rn` or `Rm`) when the shift amount is in a register, and as the stored register of `STR`, `STRH`, and `STM`. Each other read of R15 in the ARM state gives + 8 (screen 20). See `decode_operand2` and `test_arm_r15_reads_12_ahead`.
+- **An `LDM` or `STM` with writeback, where the base register is also in the list**: `LDM` does no writeback, thus the base register keeps the loaded value. `STM` stores the old base if the base is the first register of the list, and the new base if not. The ARM state and the Thumb state are the same (screens 21 and 22). See `test_ldm_stm_base_in_list`.
+- **A Thumb `PUSH` with a misaligned SP writes the aligned word.** SP keeps its misaligned value (screen 23). Each 32-bit write goes to the aligned word (`psemu_bus_write32`). See `test_thumb_push_misaligned_sp`.
+- **The cost of a Thumb `MUL` follows the incoming Rd, and not Rs**, because Thumb `MUL Rd,Rs` is ARM `MULS Rd,Rs,Rd` (screen 24). **`UMULL` and `UMLAL` stop early only for high bytes of Rs that are all 0.** `SMULL` and `SMLAL` also stop early for high bytes that are all 1 (screen 25). The other cycle counts of these screens agree with this emulator to the tick. See `test_multiply_cost_rules`.
+- **An `LDM` or `STM` with an empty register list transfers R15, and the base moves by 0x40.** `STMIA` stores R15 as the address of the instruction + 12 in the ARM state, and + 6 in the Thumb state. `LDMIA` loads R15, and the Thumb state does not change (screen 26). See `exec_block_transfer_empty` and `test_empty_register_list`.
+- **Two encodings cause the undefined-instruction exception.** See "Undefined instructions" below.
+- **A write of a misaligned address to R15 keeps bit 1.** See "Misaligned R15" below.
+- **The decode of `MSR` and `BX` ignores more bits than GBATEK gives.** See "The decode of MSR and BX" below.
+
+### Misaligned R15
+
+In the ARM state, a write of an address with bit 1 set to R15 keeps bit 1. `MOV PC`, `LDR PC`, `LDMIA {PC}`, and `BX` with bit 0 clear give the same result (screen 29 of `pk_timing_bench`, probes 6 to D). GBATEK gives R15 as "always forcibly aligned". Real hardware does not do that.
+
+The fetch at such an address depends on the region. See "Misaligned word access" below:
+
+- **In WRAM**, the fetch gives the aligned word. The instruction at the aligned address executes, and it reads R15 as that address + `0xA`. The next fetch is at + 4, with bit 1 still set.
+- **In FLASH1**, the fetch gives the halfword at the address in both halves. Thus the CPU does not execute the instruction at the aligned address. It executes a word that it makes from one halfword. Probes 6 to 9 jump to such an address in FLASH1. The CPU executes each such word to the end of the app, and the first fetch after the app causes a prefetch abort (see "Aborts" below). The kernel handler of that abort has no exit, thus the device stops.
+
+`exec_bx` keeps bit 1. The other writes to R15 already keep each bit. `psemu_bus_fetch32` gets R15 with bit 1, and it gives the result of the region. See `test_misaligned_r15_in_wram`.
+
+### The decode of MSR and BX
+
+GBATEK gives bits 12 to 15 of `MSR`, and bits 8 to 19 of `BX`, as fixed values. The ARM7TDMI does not test each of those bits. Real hardware confirms each rule below in User mode (screen 29 of `pk_timing_bench`, probes 14 to 1A):
+
+- **`MSR` ignores bits 12 to 15**, in the immediate form and in the register form. `E12F0000` is `MSR CPSR_fsxc,r0`, and `E3280450` is `MSR CPSR_f,#0x50000000`.
+- **In the register form, bits 4 to 11 are an immediate shift of Rm**, the same as the second operand of a data-processing instruction. GBATEK gives those bits as 0. `E12FE120` is `MSR CPSR_fsxc,r0,LSR #2`. LSL, LSR, ASR, ROR, and RRX are each confirmed.
+- **The CPSR does not keep bits 24 to 27.** A correct `MSR CPSR_f` with `0x5F000000` reads back as `0x50000000`.
+- **`cond 0001 0010 1111 1111 xxxx 0xx1 Rm` is `BX Rm`.** The CPU ignores bits 8 to 11, 5, and 6, and it never writes LR. `E12FF150`, `E12FFF30`, and `E12FFF70` each branch to r0 with no link. On ARMv5, `E12FFF30` is `BLX`, and `E12FFF70` is `BKPT`.
+- **`E12F0010`, with bits 12 to 15 clear, does not branch.** It has no visible effect in the probe.
+
+Thus a word that the CPU executes from a duplicated halfword can be an `MSR` that changes the flags. `E12FE12F` is `MSR CPSR_fsxc,PC,LSR #2`: in User mode, it writes only NZCV, from R15. Probes 6 to 9 execute it (see "Misaligned R15" above).
+
+`arm_execute` and `exec_msr` (`core/src/arm_exec.c`) hold these rules. See `test_msr_decode` and `test_bx_decode`.
+
+### Misaligned word access
+
+A 32-bit read at an address with bit 1 set gives a result that depends on the region (screen 29 of `pk_timing_bench`, probes 3, 4, 5, and E, and probe 11 of a build of three blocks):
+
+| Region | Result | Evidence |
+|---|---|---|
+| WRAM | The aligned word. A data read then rotates it (see "CPU" above). | Probes 5 and A to F, and screen 16 |
+| FLASH1 | The halfword at the address, in both halves. The rotation of a data read does not change that value. | Probes 3 and E, for a data read and for a fetch |
+| BIOS ROM | The same as FLASH1 | Probe 4, for a data read |
+
+`bus_read32_raw` (`core/src/memory.c`) holds these rules, for `psemu_bus_read32` and `psemu_bus_fetch32`. See `test_misaligned_word_access_in_flash1_and_bios`. Real hardware confirms them only at a word + 2. The open questions at the end of this file give the cases that no test covers.
+
+### Aborts
+
+**An access in FLASH1 after the last block of the app causes an abort** (screen 29 of `pk_timing_bench`, probes 10 to 13):
+
+- A fetch causes a prefetch abort. The return address in `LR_abt` is the address of the instruction + 4.
+- A data read causes a data abort. The return address in `LR_abt` is the address of the instruction + 8. The destination register keeps its value.
+
+The boundary is the end of the blocks of the app, and not a fixed address. An app of two blocks causes an abort at `0x02004000`. An app of three blocks executes at `0x02004000`, and causes an abort at `0x02006000`. `F_BANK_FLG` holds the blocks of the app, thus `flash1_mapped` (`core/src/flash.c`) gives the boundary: an address aborts when its virtual bank resolves to a block that `F_BANK_FLG` does not enable. The bus sets `access_abort` at such a read. `arm7tdmi_step` then takes the abort after the fetch, or after the execute operation. A load handler that reads such an address returns before it writes a register. See `test_flash1_access_after_the_app_aborts`.
+
+**The kernel sends the undefined-instruction exception, the prefetch abort, and the data abort to one handler at `0x040001C8`, which is `nop; b .` (J110).** That handler has no exit. Thus each one of these exceptions stops the device, and the LCD keeps its last contents. Its slots in the vector table are `0x24`, `0x2C`, and `0x30` (see "SWI (syscall) mechanism"). An app in User mode can write those slots. Screen 29 of `pk_timing_bench` writes its own handlers to them for each probe.
+
+### Undefined instructions
+
+Two encodings cause the undefined-instruction exception on real hardware (screen 28 of `pk_timing_bench`):
+
+- **ARM `cond 011x xxxx xxxx xxxx xxxx xxxx xxx1 xxxx`.** The test uses `0xE7F000F0`. The return address in `LR_und` is the address of the instruction + 4.
+- **Thumb `0xDExx`**, which is condition `0xE` of the conditional branch. The test uses `0xDE00`. The return address is the address of the instruction + 2.
+
+The handler runs in Undefined mode with I set, and F does not change. `SPSR_und` holds the CPSR of the instruction. `arm_enter_undefined` (`core/src/cpu.c`) holds this behavior. Without these tests, the decode of this emulator takes the ARM encoding as an `LDR` or `STR` with a register-specified shift, and the Thumb encoding as a branch that always occurs. See `test_undefined_instruction_exception`.
+
+Each other encoding that this emulator does not decode still sets the unimplemented-opcode fault (see `psemu_cpu_faulted`). No test on real hardware shows the result of those encodings.
 
 The CPU clock speed is variable, and `CLK_MODE` controls it. See "CLK_MODE" below.
 
@@ -979,6 +1050,14 @@ A real homebrew ID editor never calls `SWI 0Fh` in its code. A full scan of its 
 - **Unconfirmed: whether the serial-carrying app has more sound during use than one launch sound of approximately 17ms.** Across more than 200 million instructions of general automatic exploration, no DAC activity occurred after that one sound. The general button-press exploration of this emulator can be unable to reach the states that permit more sound. An answer in either direction needs real interactive use, with a focus on the later parts of the app.
 - **Unconfirmed: whether real hardware has a warm-boot path that does not do the January 1999 clock reset, and the condition that selects that path.** See "Where the date/time settings actually live" above for the three inputs that this project has removed as causes: the RTC contents, the RAM copies, and the card contents. The best remaining candidate is `BATT_CTRL` (`0x0D800020`), which reads 0 in this emulator. A real unit that can tell "the battery is still good" from "a user just replaced the battery" must read that condition from an address, and this emulator always looks like the second condition. If a person examines this again, model `BATT_CTRL` with a nonzero read, and execute the `warm` mode of `tools/datetime_probe.c` again. Note also that the warm runs left `RTC_DATE` at `0x009A0101`. The year byte of that value is not valid BCD. The cold run gives `0x00990101`, which is correct. Thus the `RTC_ADJUST` sequence appears to go past its target when it starts from a year that is not the power-on value. The trace of the `warm` mode gives the mechanism: the month byte holds `0xF8`, which is not valid BCD, and two increments take it to `0xFA`. The BCD carry code in `rtc.c` then clears the low digit and adds `0x10`, and that carry goes into the year byte: `0x0099F901` becomes `0x009A0001`. The carry code expects a valid BCD field. Whether real hardware can hold such a month value, and what it does at the next increment, is unknown. Examine this separately from the warm-boot question.
 - **Unconfirmed: whether a dispatched app can change the system sound volume setting.** The setting is one byte at RAM `0x290` (see "System sound volume setting" above), and that address is in the `0x200` to `0x7FF` range that the memory map calls user RAM. Outside the clear at boot, and outside its own menu writer, the BIOS never writes that byte. Thus an app that uses that byte as its own scratch memory changes the selection of the user, and gives no message. The setting then stays incorrect until the user sets it again in the menu. Nobody has tested whether a real app writes that byte. The test is to execute the real apps in `testdata/`, and to monitor `0x290` for a write from a FLASH1 PC. The `watch` mode of `tools/volume_probe.c` already reports the writing PC. Write a nonzero value into the byte first, for the reason in "System sound volume setting". This test also gives the quantity of RAM that a battery-backed-SRAM function must save and restore, and the correct time for those operations. Note that `psemu_set_volume_override` prevents this condition, because it makes the byte read-only to emulated code. But no frontend calls that function now: this project removed the Volume Override menu of the desktop app, and replaced it with an output volume at the application level. Thus in normal use, nothing prevents an app write to the byte. The core interface and its tests are still present, and `tools/volume_probe.c` still tests them.
+- **Unconfirmed: the parts of the CPU model of screens 19 to 29 of `pk_timing_bench` that no test covers.** This emulator uses each rule below. No test on real hardware confirms it:
+  - An empty register list with `IB`, `DA`, or `DB`. This emulator transfers R15 at the lowest address of a block of 16 words. Only `STMIA` and `LDMIA` are confirmed.
+  - A misaligned word access in FLASH1 or BIOS ROM at a word + 1 or + 3, a misaligned fetch in BIOS ROM, and a misaligned word access in FLASH2. This emulator uses bit 1 of the address for FLASH1 and BIOS ROM, and the aligned word for FLASH2. Only an access at a word + 2 is confirmed.
+  - A store in FLASH1 after the end of the app. This emulator causes no abort for a store.
+  - The base register and the other registers after a data abort. This emulator does not write the destination register, does no base writeback, and keeps each register that an `LDM` or a `POP` loaded before the abort. Only the destination register of an `LDR` is confirmed.
+  - An abort in the Thumb state. This emulator uses the ARM-style return offsets that GBATEK gives: + 4 for a prefetch abort, and + 8 for a data abort.
+  - A Thumb `BX` to the ARM state with bit 1 set. This emulator clears bit 1. Only the ARM `BX` is confirmed.
+- **Unconfirmed: the parts of the decode of `MSR` and `BX` that no test covers** (see "The decode of MSR and BX"). Each test ran in User mode, with bits 16 to 19 all 1. This emulator uses the same rules for the SPSR form of `MSR`, and for the other values of bits 16 to 19 of `BX`. It keeps bits 8 to 23 of the CPSR at 0, and no test shows those bits. It executes `E12F0010` and the other words with bit 4 set and bits 12 to 15 not all 1 as `TEQ` with no flag write, which agrees with the one test of `E12F0010`.
 - **IR (`0x0C800000` and above)**: see "IR / IR Link" above for the full model, and for the list of inferred items at the end of that section. The short form: the `BFLT` debounce window, the active-low polarity of the receive line, the receive function of `IRDA_DATA` bit 0, and the behavior of `IRDA_MISC` are all unconfirmed against real hardware. `IR_TX_FALL_STRETCH_CYCLES` is a recorded concession and not a model of a physical effect. No BIOS trace in the test set of this project, which is more than 200 million instructions, accessed these registers. There is no second real PocketStation for a validation of a model of the protocol.
 - **Unconfirmed: the meaning of the `184` value in the transmit setup of the serial-carrying app.** That app arms Timer2 with `1200 - 184 = 1016`, where 1200 is its nominal unit. Six separate measurements on real hardware remove each digital cause for a compensation of that size (see "Timing measurements on real hardware" above). Three of those measurements give exactly 0 ticks of dispatch latency, across a handler that goes from two instructions to the full realistic sequence. Thus the value is very probably not a timing compensation. It can be a protocol constant, a different arithmetic relation, or another part of the encoding that this project has not examined. A new disassembly of the setup routine can answer this question.
 - **Open: this emulator applies too much cost to a nested dispatch with an ARM-to-Thumb transition.** The transmit-handler dispatch of a real app costs 128 to 160 Timer2 ticks here, and real hardware adds 0 ticks for the same shape (screen 11 of `pk_timing_bench`). `tools/ir_probe.c` measured the emulator value directly, over 658 real writes from an actual transmit burst. The 32-cycle sample resolution of Timer0 limits that measurement. This is a cycle-cost fault in this emulator, and it is separate from the IR model.

@@ -85,6 +85,12 @@ typedef struct psemu_bus {
        value is not part of the state of the machine: only a difference over a few instructions has a
        meaning. */
     uint32_t side_accesses;
+    /* Set by a read in FLASH1 at a virtual bank that no enabled block of F_BANK_FLG gives, which is
+       an address after the end of the app. On real hardware, such a fetch causes a prefetch abort, and
+       such a data read causes a data abort. arm7tdmi_step sets this flag to 0 before the fetch, and
+       it tests the flag after the fetch and after the execute operation. See flash1_mapped in flash.c,
+       and docs/hardware-notes.md, "Aborts". */
+    uint32_t access_abort;
     /* One RAM byte that stays read-only to emulated code. The value
        PSEMU_RAM_SIZE means "no byte is locked". This value is a sentinel
        that no RAM address can equal. Thus the guard in bus_write8_raw is

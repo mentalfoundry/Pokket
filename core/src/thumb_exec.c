@@ -11,13 +11,14 @@ static uint32_t sign_extend(uint32_t value, int bits) {
 }
 
 /* A Thumb LDR uses the same load path as an ARM LDR (see exec_single_transfer in arm_exec.c).
-   A misaligned word load reads the aligned word, and then rotates it right by 8 bits for each
-   byte of misalignment. Thus the byte at the address is in the low 8 bits.
+   In WRAM, a misaligned word load reads the aligned word, and then rotates it right by 8 bits for
+   each byte of misalignment. Thus the byte at the address is in the low 8 bits. The bus gives the
+   word, which depends on the region (see bus_read32_raw in memory.c).
    The menu routine of a real fighting-game app depends on this. It reads a byte table with
    `LDR Rd,[Rb,Ro]` at each byte address, and masks the result to the low byte. Without the
    rotation, each group of four entries gives the same byte. */
 static uint32_t read32_rotated(psemu_bus_t *bus, uint32_t addr) {
-    uint32_t value = psemu_bus_read32(bus, addr & ~3u);
+    uint32_t value = psemu_bus_read32(bus, addr);
     uint32_t rot = (addr & 3u) * 8u;
     return rot ? (value >> rot) | (value << (32u - rot)) : value;
 }
@@ -195,8 +196,10 @@ static void exec_alu(arm7tdmi_t *cpu, uint16_t instr) {
         result = a * b;
         cpu->r[rd] = result;
         arm_set_nz(cpu, result);
-        /* Thumb MUL: 1S+mI. Same early-termination rule as ARM's MUL. */
-        arm7tdmi_add_cycles(cpu, arm7tdmi_mul_m_cycles(b));
+        /* Thumb MUL: 1S+mI. The rule of ARM MUL, with the incoming Rd, because Thumb MUL Rd,Rs is
+           ARM MULS Rd,Rs,Rd. Real hardware confirms that the cost follows Rd, and not Rs (screen 24
+           of pk_timing_bench). */
+        arm7tdmi_add_cycles(cpu, arm7tdmi_mul_m_cycles(a));
         return;
     case 0xE: /* BIC */
         result = a & ~b;
@@ -275,7 +278,11 @@ static void exec_pc_relative_load(arm7tdmi_t *cpu, uint16_t instr, uint32_t pc) 
     int rd = (instr >> 8) & 0x7;
     uint32_t imm8 = instr & 0xFFu;
     uint32_t base = (pc + 4u) & ~3u;
-    cpu->r[rd] = psemu_bus_read32(cpu->bus, base + imm8 * 4u);
+    uint32_t value = psemu_bus_read32(cpu->bus, base + imm8 * 4u);
+    if (cpu->bus->access_abort) {
+        return; /* a data abort. See exec_single_transfer in arm_exec.c. */
+    }
+    cpu->r[rd] = value;
     arm7tdmi_add_cycles(cpu, 1u); /* LDR: +1I, data access already counted */
 }
 
@@ -288,7 +295,11 @@ static void exec_load_store_reg_offset(arm7tdmi_t *cpu, uint16_t instr) {
     uint32_t addr = cpu->r[rb] + cpu->r[ro];
 
     if (load) {
-        cpu->r[rd] = byte ? psemu_bus_read8(cpu->bus, addr) : read32_rotated(cpu->bus, addr);
+        uint32_t value = byte ? psemu_bus_read8(cpu->bus, addr) : read32_rotated(cpu->bus, addr);
+        if (cpu->bus->access_abort) {
+            return; /* a data abort. See exec_single_transfer in arm_exec.c. */
+        }
+        cpu->r[rd] = value;
         arm7tdmi_add_cycles(cpu, 1u); /* LDR/LDRB: +1I */
     } else if (byte) {
         psemu_bus_write8(cpu->bus, addr, (uint8_t)cpu->r[rd]);
@@ -305,17 +316,21 @@ static void exec_load_store_sign_extended(arm7tdmi_t *cpu, uint16_t instr) {
     int rd = instr & 0x7;
     uint32_t addr = cpu->r[rb] + cpu->r[ro];
 
+    uint32_t value;
     if (!s && !h) { /* STRH */
         psemu_bus_write16(cpu->bus, addr & ~1u, (uint16_t)cpu->r[rd]);
         return;
     } else if (!s && h) { /* LDRH */
-        cpu->r[rd] = read16_rotated(cpu->bus, addr);
+        value = read16_rotated(cpu->bus, addr);
     } else if (s && !h) { /* LDSB */
-        int8_t b = (int8_t)psemu_bus_read8(cpu->bus, addr);
-        cpu->r[rd] = (uint32_t)(int32_t)b;
+        value = (uint32_t)(int32_t)(int8_t)psemu_bus_read8(cpu->bus, addr);
     } else { /* LDSH */
-        cpu->r[rd] = read16_signed(cpu->bus, addr);
+        value = read16_signed(cpu->bus, addr);
     }
+    if (cpu->bus->access_abort) {
+        return; /* a data abort. See exec_single_transfer in arm_exec.c. */
+    }
+    cpu->r[rd] = value;
     arm7tdmi_add_cycles(cpu, 1u); /* LDRH/LDSB/LDSH: +1I */
 }
 
@@ -329,7 +344,11 @@ static void exec_load_store_imm_offset(arm7tdmi_t *cpu, uint16_t instr) {
     uint32_t addr = cpu->r[rb] + offset;
 
     if (load) {
-        cpu->r[rd] = byte ? psemu_bus_read8(cpu->bus, addr) : read32_rotated(cpu->bus, addr);
+        uint32_t value = byte ? psemu_bus_read8(cpu->bus, addr) : read32_rotated(cpu->bus, addr);
+        if (cpu->bus->access_abort) {
+            return; /* a data abort. See exec_single_transfer in arm_exec.c. */
+        }
+        cpu->r[rd] = value;
         arm7tdmi_add_cycles(cpu, 1u); /* LDR/LDRB: +1I */
     } else if (byte) {
         psemu_bus_write8(cpu->bus, addr, (uint8_t)cpu->r[rd]);
@@ -346,7 +365,11 @@ static void exec_load_store_halfword_imm(arm7tdmi_t *cpu, uint16_t instr) {
     uint32_t addr = cpu->r[rb] + imm5 * 2u;
 
     if (load) {
-        cpu->r[rd] = read16_rotated(cpu->bus, addr);
+        uint32_t value = read16_rotated(cpu->bus, addr);
+        if (cpu->bus->access_abort) {
+            return; /* a data abort. See exec_single_transfer in arm_exec.c. */
+        }
+        cpu->r[rd] = value;
         arm7tdmi_add_cycles(cpu, 1u); /* LDRH: +1I */
     } else {
         psemu_bus_write16(cpu->bus, addr & ~1u, (uint16_t)cpu->r[rd]);
@@ -360,7 +383,11 @@ static void exec_sp_relative(arm7tdmi_t *cpu, uint16_t instr) {
     uint32_t addr = cpu->r[13] + imm8 * 4u;
 
     if (load) {
-        cpu->r[rd] = read32_rotated(cpu->bus, addr);
+        uint32_t value = read32_rotated(cpu->bus, addr);
+        if (cpu->bus->access_abort) {
+            return; /* a data abort. See exec_single_transfer in arm_exec.c. */
+        }
+        cpu->r[rd] = value;
         arm7tdmi_add_cycles(cpu, 1u); /* LDR: +1I */
     } else {
         psemu_bus_write32(cpu->bus, addr & ~3u, cpu->r[rd]);
@@ -387,14 +414,28 @@ static void exec_push_pop(arm7tdmi_t *cpu, uint16_t instr) {
     uint8_t rlist = (uint8_t)(instr & 0xFFu);
 
     if (load) { /* POP: low registers first, then PC (matches ascending addresses) */
+        /* A data abort stops the POP. The registers that loaded before the abort keep their new
+           values, and SP keeps its old value. No test on real hardware shows the registers after an
+           aborted POP. See exec_single_transfer in arm_exec.c. */
+        uint32_t old_sp = cpu->r[13];
         for (int i = 0; i < 8; i++) {
             if (rlist & (1u << i)) {
-                cpu->r[i] = psemu_bus_read32(cpu->bus, cpu->r[13] & ~3u);
+                uint32_t value = psemu_bus_read32(cpu->bus, cpu->r[13] & ~3u);
+                if (cpu->bus->access_abort) {
+                    cpu->r[13] = old_sp;
+                    return;
+                }
+                cpu->r[i] = value;
                 cpu->r[13] += 4u;
             }
         }
         if (extra) {
-            cpu->r[15] = psemu_bus_read32(cpu->bus, cpu->r[13] & ~3u) & ~1u;
+            uint32_t value = psemu_bus_read32(cpu->bus, cpu->r[13] & ~3u);
+            if (cpu->bus->access_abort) {
+                cpu->r[13] = old_sp;
+                return;
+            }
+            cpu->r[15] = value & ~1u;
             cpu->r[13] += 4u;
         }
         /* POP costs nS+1N+1I. This code already counted the n reads
@@ -409,6 +450,9 @@ static void exec_push_pop(arm7tdmi_t *cpu, uint16_t instr) {
         }
         arm7tdmi_add_cycles(cpu, extra_cycles);
     } else { /* PUSH: low registers at the lowest addresses, LR just below the old SP */
+        /* With a misaligned SP, each write goes to the aligned word, and SP keeps its misaligned
+           value. Real hardware confirms this (screen 23 of pk_timing_bench). psemu_bus_write32
+           aligns the address. */
         int count = extra ? 1 : 0;
         for (int i = 0; i < 8; i++) {
             if (rlist & (1u << i)) {
@@ -429,23 +473,63 @@ static void exec_push_pop(arm7tdmi_t *cpu, uint16_t instr) {
     }
 }
 
-static void exec_multiple_transfer(arm7tdmi_t *cpu, uint16_t instr) {
+static void exec_multiple_transfer(arm7tdmi_t *cpu, uint16_t instr, uint32_t pc) {
     int load = (instr >> 11) & 1;
     int rb = (instr >> 8) & 0x7;
     uint8_t rlist = (uint8_t)(instr & 0xFFu);
-    uint32_t addr = cpu->r[rb];
+    uint32_t base = cpu->r[rb];
+    uint32_t addr = base;
+    int count = 0;
+
+    if (rlist == 0) {
+        /* An empty list. The instruction transfers R15 at the base, and the base moves by 0x40, the
+           same as the ARM LDM and STM (see exec_block_transfer_empty in arm_exec.c). STMIA stores R15
+           as the address of the instruction + 6. LDMIA loads R15, and the CPU stays in the Thumb
+           state. Real hardware confirms each value (screen 26 of pk_timing_bench). */
+        if (load) {
+            uint32_t value = psemu_bus_read32(cpu->bus, addr & ~3u);
+            if (cpu->bus->access_abort) {
+                return; /* a data abort. See exec_single_transfer in arm_exec.c. */
+            }
+            cpu->r[15] = value & ~1u;
+            arm7tdmi_add_cycles(cpu, 1u + 2u * psemu_region_fetch_cycles(cpu->r[15], 1));
+        } else {
+            psemu_bus_write32(cpu->bus, addr, pc + 6u);
+        }
+        cpu->r[rb] = base + 0x40u;
+        return;
+    }
+
+    for (int i = 0; i < 8; i++) {
+        if (rlist & (1u << i)) {
+            count++;
+        }
+    }
+    /* The base register in the list. The rules are the same as ARM LDM and STM with writeback (see
+       exec_block_transfer in arm_exec.c): LDMIA does no writeback, and STMIA stores the new base if
+       the base is not the first register of the list. Real hardware confirms both rules in the Thumb
+       state (screen 22 of pk_timing_bench). */
+    uint32_t new_base = base + (uint32_t)count * 4u;
+    int base_in_list = (rlist >> rb) & 1;
+    int store_new_base = base_in_list && (rlist & ((1u << rb) - 1u)) != 0;
 
     for (int i = 0; i < 8; i++) {
         if (rlist & (1u << i)) {
             if (load) {
-                cpu->r[i] = psemu_bus_read32(cpu->bus, addr & ~3u);
+                uint32_t value = psemu_bus_read32(cpu->bus, addr & ~3u);
+                if (cpu->bus->access_abort) {
+                    return; /* a data abort. See exec_block_transfer in arm_exec.c. */
+                }
+                cpu->r[i] = value;
             } else {
-                psemu_bus_write32(cpu->bus, addr & ~3u, cpu->r[i]);
+                psemu_bus_write32(cpu->bus, addr & ~3u, (i == rb && store_new_base) ? new_base : cpu->r[i]);
             }
             addr += 4u;
         }
     }
-    cpu->r[rb] = addr;
+    if (!(load && base_in_list)) {
+        cpu->r[rb] = new_base;
+    }
     if (load) {
         arm7tdmi_add_cycles(cpu, 1u); /* LDMIA: +1I; STMIA needs no extra */
     }
@@ -563,9 +647,14 @@ void thumb_execute(arm7tdmi_t *cpu, uint16_t instr, uint32_t pc) {
         return;
     case 6: /* formats 15, 16, 17 */
         if (((instr >> 12) & 0xFu) == 0xCu) {
-            exec_multiple_transfer(cpu, instr);
+            exec_multiple_transfer(cpu, instr, pc);
         } else if ((instr & 0xFF00u) == 0xDF00u) {
             exec_thumb_swi(cpu, pc);
+        } else if ((instr & 0xFF00u) == 0xDE00u) {
+            /* Condition 0xE of the conditional branch is undefined. Without this test, the branch
+               decode below takes it as "always". Real hardware confirms the exception for 0xDE00
+               (screen 28 of pk_timing_bench). */
+            arm_enter_undefined(cpu, pc + 2u);
         } else {
             exec_conditional_branch(cpu, instr, pc);
         }

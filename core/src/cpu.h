@@ -25,6 +25,9 @@
 #define ARM_MODE_UND 0x1Bu
 #define ARM_MODE_SYS 0x1Fu
 
+#define ARM_UND_VECTOR 0x04u
+#define ARM_PABT_VECTOR 0x0Cu
+#define ARM_DABT_VECTOR 0x10u
 #define ARM_IRQ_VECTOR 0x18u
 #define ARM_FIQ_VECTOR 0x1Cu
 
@@ -130,6 +133,10 @@ void arm_set_nz(arm7tdmi_t *cpu, uint32_t result);
 uint32_t arm_adc_raw(uint32_t a, uint32_t b, uint32_t carry_in, int *carry_out, int *overflow);
 arm_shift_result_t arm_apply_shift(uint32_t value, int shift_type, uint32_t amount, int carry_in, int is_immediate_encoding);
 void arm_enter_exception(arm7tdmi_t *cpu, uint32_t mode, uint32_t vector, uint32_t return_addr);
+/* The undefined-instruction exception, for an encoding that real hardware gives as undefined. The
+   return address is the address of the instruction + 4 in the ARM state, and + 2 in the Thumb state.
+   See docs/hardware-notes.md, "Undefined instructions". */
+void arm_enter_undefined(arm7tdmi_t *cpu, uint32_t return_addr);
 
 /* Adds `n` cycles to the automatic opcode-fetch cost and data-access
    cost.
@@ -146,8 +153,9 @@ void arm7tdmi_add_cycles(arm7tdmi_t *cpu, uint32_t n);
 /* The real early-termination cycle count of the ARM7TDMI multiply
    (m = 1 to 4), for a given Rs value. See the definition in arm_exec.c
    for the rule.
-   MUL, MLA, UMULL, UMLAL, SMULL, and SMLAL in arm_exec.c use this
-   function. MUL in thumb_exec.c also uses it. */
+   MUL, MLA, SMULL, and SMLAL in arm_exec.c use this function. MUL in
+   thumb_exec.c also uses it, with the incoming Rd. UMULL and UMLAL use a
+   different rule (mul_m_cycles_unsigned in arm_exec.c). */
 uint32_t arm7tdmi_mul_m_cycles(uint32_t rs);
 
 void arm_execute(arm7tdmi_t *cpu, uint32_t instr, uint32_t pc);

@@ -236,6 +236,15 @@ void arm_enter_exception(arm7tdmi_t *cpu, uint32_t mode, uint32_t vector, uint32
     cpu->r[15] = vector;
 }
 
+void arm_enter_undefined(arm7tdmi_t *cpu, uint32_t return_addr) {
+    /* On real hardware, the handler runs in Undefined mode with I set, and SPSR_und holds the CPSR
+       of the instruction (screen 28 of pk_timing_bench). GBATEK gives the cost as 2S+1I+1N: the
+       pipeline refill at the vector, and 1 internal cycle. No test on real hardware measures that
+       cost. */
+    arm_enter_exception(cpu, ARM_MODE_UND, ARM_UND_VECTOR, return_addr);
+    arm7tdmi_add_cycles(cpu, 2u * psemu_region_fetch_cycles(ARM_UND_VECTOR, 0) + 1u);
+}
+
 uint32_t psemu_debug_current_pc = 0;
 
 #ifdef PSEMU_TRACE_HOOKS
@@ -306,14 +315,42 @@ uint32_t arm7tdmi_step(arm7tdmi_t *cpu) {
         return cpu->bus->pending_cycles;
     }
     uint32_t pc = cpu->r[15];
-    if (cpu->cpsr & CPSR_T) {
-        uint16_t instr = psemu_bus_fetch16(cpu->bus, pc & ~1u);
-        cpu->r[15] = pc + 2u;
-        thumb_execute(cpu, instr, pc);
+    uint32_t thumb = cpu->cpsr & CPSR_T;
+    uint16_t thumb_instr = 0;
+    uint32_t arm_instr = 0;
+    cpu->bus->access_abort = 0;
+    if (thumb) {
+        thumb_instr = psemu_bus_fetch16(cpu->bus, pc & ~1u);
     } else {
-        uint32_t instr = psemu_bus_fetch32(cpu->bus, pc & ~3u);
+        /* R15 keeps bit 1 after a write of a misaligned address. The bus gives the result of that
+           fetch. See bus_read32_raw in memory.c. */
+        arm_instr = psemu_bus_fetch32(cpu->bus, pc);
+    }
+    if (cpu->bus->access_abort) {
+        /* A prefetch abort. On real hardware, the return address is the address of the
+           instruction + 4 (screen 29 of pk_timing_bench, probes 10 and 12, in the ARM state). GBATEK
+           gives the same ARM-style offset in the Thumb state. The cost has the shape of the other
+           exception entries. */
+        cpu->bus->access_abort = 0;
+        arm_enter_exception(cpu, ARM_MODE_ABT, ARM_PABT_VECTOR, pc + 4u);
+        arm7tdmi_add_cycles(cpu, 2u * psemu_region_fetch_cycles(ARM_PABT_VECTOR, 0));
+        return cpu->bus->pending_cycles;
+    }
+    if (thumb) {
+        cpu->r[15] = pc + 2u;
+        thumb_execute(cpu, thumb_instr, pc);
+    } else {
         cpu->r[15] = pc + 4u;
-        arm_execute(cpu, instr, pc);
+        arm_execute(cpu, arm_instr, pc);
+    }
+    if (cpu->bus->access_abort) {
+        /* A data abort. The instruction handler returned at the aborted read, before it wrote a
+           register. On real hardware, the return address is the address of the instruction + 8, and
+           the destination register keeps its value (screen 29, probes 11 and 13, in the ARM state).
+           GBATEK gives the same ARM-style offset in the Thumb state. */
+        cpu->bus->access_abort = 0;
+        arm_enter_exception(cpu, ARM_MODE_ABT, ARM_DABT_VECTOR, pc + 8u);
+        arm7tdmi_add_cycles(cpu, 2u * psemu_region_fetch_cycles(ARM_DABT_VECTOR, 0));
     }
     return cpu->bus->pending_cycles;
 }

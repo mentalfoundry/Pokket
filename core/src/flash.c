@@ -358,6 +358,12 @@ static uint32_t flash_resolve_physical_bank(const flash_t *flash, uint32_t virtu
     return lowest + virtual_bank;
 }
 
+int flash1_mapped(const flash_t *flash, uint32_t addr) {
+    uint32_t virtual_bank = (addr / FLASH_BLOCK_SIZE) % FLASH_BANK_VAL_COUNT;
+    uint32_t physical_bank = flash_resolve_physical_bank(flash, virtual_bank);
+    return physical_bank < FLASH_BANK_VAL_COUNT && (flash->bank_mask & (1u << physical_bank)) != 0;
+}
+
 uint8_t flash1_read8(flash_t *flash, uint32_t addr) {
     uint32_t virtual_bank = (addr / FLASH_BLOCK_SIZE) % FLASH_BANK_VAL_COUNT;
     uint32_t offset_in_bank = addr % FLASH_BLOCK_SIZE;

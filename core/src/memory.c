@@ -83,6 +83,7 @@ void psemu_bus_init(
     bus->clk = clk;
     bus->iop = iop;
     bus->pending_cycles = 0;
+    bus->access_abort = 0;
     bus->ram_lock_addr = PSEMU_RAM_SIZE; /* no byte is locked */
     bus->ram_lock_value = 0;
 }
@@ -178,6 +179,12 @@ static uint8_t bus_read8_untraced(psemu_bus_t *bus, uint32_t addr) {
     /* FLASH1 is a banked window onto FLASH2. FLASH_CTRL selects the block
        that gives the offset (see docs/hardware-notes.md). */
     if (addr >= PSEMU_FLASH1_BASE && addr < PSEMU_FLASH1_BASE + PSEMU_FLASH_SIZE) {
+        /* An address after the end of the app causes an abort on real hardware. The value stays the
+           value of the bank resolution, thus a read from a tool or a test sees no change. Only the CPU
+           acts on the flag. See access_abort in memory.h. */
+        if (!flash1_mapped(bus->flash, addr - PSEMU_FLASH1_BASE)) {
+            bus->access_abort = 1;
+        }
         return flash1_read8(bus->flash, addr - PSEMU_FLASH1_BASE);
     }
     if (addr >= PSEMU_FLASH2_BASE && addr < PSEMU_FLASH2_BASE + PSEMU_FLASH_SIZE) {
@@ -363,10 +370,39 @@ uint16_t psemu_bus_read16(psemu_bus_t *bus, uint32_t addr) {
     return (uint16_t)(bus_read8_raw(bus, addr) | ((uint16_t)bus_read8_raw(bus, addr + 1) << 8));
 }
 
-uint32_t psemu_bus_read32(psemu_bus_t *bus, uint32_t addr) {
-    bus->pending_cycles += psemu_region_data_cycles(addr);
+/* 1 for a region with a 16-bit data bus: FLASH1 and BIOS ROM. */
+static int bus_is_halfword_region(uint32_t addr) {
+    return (addr >= PSEMU_FLASH1_BASE && addr < PSEMU_FLASH1_BASE + PSEMU_FLASH_SIZE) ||
+           (addr >= PSEMU_BIOS_BASE && addr < PSEMU_BIOS_BASE + PSEMU_BIOS_SIZE);
+}
+
+/* A 32-bit read with no cost, for a data read and for a fetch. The result depends on the region,
+   and real hardware confirms each rule (screen 29 of pk_timing_bench):
+   - In FLASH1, an address with bit 1 set gives the halfword at that address in both halves. This is
+     true for a data read and for a fetch. In BIOS ROM, a data read gives the same result. No test
+     has made a misaligned fetch in BIOS ROM, and this code uses the same rule for it.
+   - In WRAM, the result is the aligned word, for a data read and for a fetch. Each other region
+     uses the same rule, with no test.
+   Real hardware confirms these rules only for an address at a word + 2. An address at + 1 or + 3
+   uses bit 1 the same way, with no test.
+   For a data read, the CPU then rotates the result by the misaligned bytes (see exec_single_transfer
+   in arm_exec.c). The rotation does not change a duplicated halfword. Thus a misaligned LDR at +2 in
+   FLASH1 gives the halfword at +2 in both halves. See docs/hardware-notes.md, "Misaligned word
+   access". */
+static uint32_t bus_read32_raw(psemu_bus_t *bus, uint32_t addr) {
+    if ((addr & 2u) && bus_is_halfword_region(addr)) {
+        uint32_t half_addr = addr & ~1u;
+        uint32_t half = (uint32_t)bus_read8_raw(bus, half_addr) | ((uint32_t)bus_read8_raw(bus, half_addr + 1) << 8);
+        return half | (half << 16);
+    }
+    addr &= ~3u;
     return (uint32_t)bus_read8_raw(bus, addr) | ((uint32_t)bus_read8_raw(bus, addr + 1) << 8) |
            ((uint32_t)bus_read8_raw(bus, addr + 2) << 16) | ((uint32_t)bus_read8_raw(bus, addr + 3) << 24);
+}
+
+uint32_t psemu_bus_read32(psemu_bus_t *bus, uint32_t addr) {
+    bus->pending_cycles += psemu_region_data_cycles(addr);
+    return bus_read32_raw(bus, addr);
 }
 
 void psemu_bus_write16(psemu_bus_t *bus, uint32_t addr, uint16_t value) {
@@ -375,8 +411,11 @@ void psemu_bus_write16(psemu_bus_t *bus, uint32_t addr, uint16_t value) {
     bus_write8_raw(bus, addr + 1, (uint8_t)(value >> 8));
 }
 
+/* A 32-bit write goes to the aligned word. Real hardware confirms this for a Thumb PUSH with a
+   misaligned SP (screen 23 of pk_timing_bench). */
 void psemu_bus_write32(psemu_bus_t *bus, uint32_t addr, uint32_t value) {
     bus->pending_cycles += psemu_region_data_cycles(addr);
+    addr &= ~3u;
     bus_write8_raw(bus, addr, (uint8_t)value);
     bus_write8_raw(bus, addr + 1, (uint8_t)(value >> 8));
     bus_write8_raw(bus, addr + 2, (uint8_t)(value >> 16));
@@ -388,8 +427,9 @@ uint16_t psemu_bus_fetch16(psemu_bus_t *bus, uint32_t addr) {
     return (uint16_t)(bus_read8_raw(bus, addr) | ((uint16_t)bus_read8_raw(bus, addr + 1) << 8));
 }
 
+/* The address is R15, with bit 1 if R15 has it. See bus_read32_raw for the result of a misaligned
+   fetch. */
 uint32_t psemu_bus_fetch32(psemu_bus_t *bus, uint32_t addr) {
     bus->pending_cycles += psemu_region_fetch_cycles(addr, 0);
-    return (uint32_t)bus_read8_raw(bus, addr) | ((uint32_t)bus_read8_raw(bus, addr + 1) << 8) |
-           ((uint32_t)bus_read8_raw(bus, addr + 2) << 16) | ((uint32_t)bus_read8_raw(bus, addr + 3) << 24);
+    return bus_read32_raw(bus, addr);
 }
