@@ -157,6 +157,8 @@ int main(int argc, char **argv) {
     if (probe >= 0) {
         int k;
         psemu_bus_write32(&ps->bus, pages == 13 ? WRAM_STOP_MODE : WRAM_PROBE_SEL, (uint32_t)probe);
+        printf("intc before the run: enable=0x%08X hold=0x%08X\n", psemu_bus_read32(&ps->bus, 0x0A000008u),
+            psemu_bus_read32(&ps->bus, 0x0A000000u));
         for (k = 0; k < 10; k++) {
             psemu_set_buttons(ps, PSEMU_BUTTON_DOWN);
             psemu_run(ps, 33000u);
@@ -179,6 +181,8 @@ int main(int argc, char **argv) {
                 psemu_set_buttons(ps, 0);
                 psemu_run(ps, 33000u);
             }
+            printf("screen13 intc after the run: enable=0x%08X hold=0x%08X\n", psemu_bus_read32(&ps->bus, 0x0A000008u),
+                psemu_bus_read32(&ps->bus, 0x0A000000u));
             printf("screen13 stop rows @0x2C4/0x684: seconds=0x%08X irqs=0x%04X%04X rtc=0x%08X t1=0x%08X\n",
                 psemu_bus_read32(&ps->bus, 0x2C4u), psemu_bus_read32(&ps->bus, 0x684u),
                 psemu_bus_read32(&ps->bus, 0x688u), psemu_bus_read32(&ps->bus, 0x68Cu),

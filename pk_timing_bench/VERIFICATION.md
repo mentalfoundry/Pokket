@@ -111,17 +111,24 @@ In the stop test, row 4 gives the same count before and after the stop, because 
 
 On real hardware, the CPU executes one instruction after the store before it stops. In this emulator, the CPU stops before that instruction.
 
-**Mode 6, a `MOV` of 1 cycle after the store.** The same rows as mode 2, but the reads are in the second, third, and fourth instructions after the store. No real-hardware run yet.
+**Mode 6, a `MOV` of 1 cycle after the store.** The same rows as mode 2, but the reads are in the second, third, and fourth instructions after the store.
 
 | Source | Row 1 (before) | Row 2 (2nd after) | Row 3 (3rd after) | Row 4 (4th after) | Date |
 |---|---|---|---|---|---|
+| Real hardware | `0x000003DB` | `0x000003DB` | `0x0000024F` | `0x0000024F` | 2026-10-17 |
 | This emulator | `0x000003DB` | `0x000003DB` | `0x000003DB` | `0x000003DB` | 2026-10-16 |
 
-**Mode 5, the hold bit of a held button.** Each row is the hold register (high) and the status register (low). Row 1 is at the start, with DOWN down. Row 2 is after the mask of each source and an acknowledge of DOWN. Row 3 is approximately 10 ms later. Row 4 is after the release of DOWN. No real-hardware run yet.
+With the `MOV`, the CPU executes two instructions after the store before it stops: the `MOV` and the first `LDR`. In mode 2, it executes one. Thus the stop does not occur after a fixed number of instructions. Two rules agree with both modes: a fixed number of cycles after the store, or the stop after the first data read after the store.
+
+**Mode 5, the hold bit of a held button.** Each row is the hold register (high) and the status register (low). Row 1 is at the start, with DOWN down. Row 2 is after the mask of each source and an acknowledge of DOWN. Row 3 is approximately 10 ms later. Row 4 is after the release of DOWN.
 
 | Source | Row 1 | Row 2 | Row 3 | Row 4 | Date |
 |---|---|---|---|---|---|
+| Real hardware, immediately after mode 6 | `0x02800208` | `0x02800208` | `0x02800208` | `0x02800200` | 2026-10-17 |
+| Real hardware, after a new start of the app | `0x02800208` | `0x02800208` | `0x02800208` | `0x02800200` | 2026-10-17 |
 | This emulator | `0x00880008` | `0x00800008` | `0x00800008` | `0x02800200` | 2026-10-16 |
+
+Each source is masked at the start of both real runs. Mode 6 masks and acknowledges each source at its end, and the startup measurements mask each source. `tools/bench_probe.c` shows an enable register of `0x00000000` at the start of mode 5 in both conditions. On real hardware, DOWN stays down in rows 1 to 3, and its request does not occur, at the press or after an acknowledge. The requests of Timer0 and the RTC (`0280`) occur after the acknowledge at the end of mode 6, with each source masked. Thus a masked Timer0 and a masked RTC record a request, and a masked button that stays down does not. This emulator records the press of the masked DOWN in row 1.
 
 **Modes 3 and 4, the record of each interrupt.** Mode 3 unmasks ACTION and Timer1, and mode 4 unmasks each button and Timer1. Each row holds the first interrupt (high) and the second interrupt (low): row 1 the Timer1 interrupts before and after the store, row 2 the hold register, row 3 the Timer1 count, and row 4 the phase.
 
