@@ -109,7 +109,7 @@ In the stop test, row 4 gives the same count before and after the stop, because 
 | Real hardware | `0x000003DB` | `0x000003DB` | `0x000002FE` | `0x000002FE` | 2026-10-16 |
 | This emulator | `0x000003DB` | `0x000003DB` | `0x000003DB` | `0x000003DB` | 2026-10-16 |
 
-On real hardware, the CPU executes one instruction after the store before it stops. In this emulator, the CPU stops before that instruction.
+On real hardware, the CPU executes the first instruction after the store before it stops. In this emulator, the CPU stops before that instruction.
 
 **Mode 6, a `MOV` of 1 cycle after the store.** The same rows as mode 2, but the reads are in the second, third, and fourth instructions after the store.
 
