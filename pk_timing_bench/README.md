@@ -63,7 +63,7 @@ This app runs its startup measurements one time, at power-on. A person then page
 - **LEFT**: the previous screen
 - The screens wrap around: 1 to 11, then screen 13, then screen 14, then screen 15, then screens 16 to 29, then 1. Thus LEFT from screen 1 goes directly to screen 29. No screen stops the device. See "Screens 19 to 28" below.
 - **UP** and **DOWN**, on screen 29 only, select a probe and run it. See "Screen 29" below.
-- **DOWN**, on screen 13 only, runs the CLK stop test. That is the one measurement here that does not run at startup, because only a press of ACTION from a person can end it. See "Screen 13" below.
+- **UP** and **DOWN**, on screen 13 only, select a mode of the CLK stop test and run it. That is the one measurement here that does not run at startup, because only a press of ACTION from a person can end it. See "Screen 13" below.
 - **DOWN**, on screen 15 only, arms the COM timing run before the device goes into a memory card slot, and it clears the captures of the run before. **UP**, on screen 15 only, shows the next stored capture after the device comes out. See "Screen 15" below.
 - **A hold on ACTION** opens a CONTINUE/EXIT prompt. That prompt returns to the system without a hardware reset. UP selects CONTINUE, DOWN selects EXIT, and a new ACTION press confirms the selection. See "Screen index used for the continue/exit prompt" in `src/constants.inc`, and `pb_prompt_confirm_exit` in `src/ui.s`, for the full behavior.
 
@@ -237,7 +237,7 @@ The two rows use different divisors deliberately. A running pulse is a full seco
 
 ### Screen 13: does bit 0 of CLK control (0x0B000004) stop the CPU?
 
-Each other screen here reports a number that it measured at startup. This screen is interactive. **Press DOWN to run it.** The measured quantity is the time that the CPU stayed stopped. On a device with no other input, only a button press from a person ends that time.
+Each other screen here reports a number that it measured at startup. This screen is interactive. **UP selects the next mode, and DOWN runs the selected mode.** The digit after the `D` at the top is the selected mode. Mode 0 is the stop test that the paragraphs below describe. The measured quantity is the time that the CPU stayed stopped. On a device with no other input, only a button press from a person ends that time.
 
 **The reason for this screen.** A real commercial app arms an idle timer. When that timer expires and no button is down, the app writes `1` to this register. That write is the last step of a power-down sequence. The earlier steps turn the sound off, mask the RTC interrupt, and turn the display off. Real hardware sleeps at that point, which a test confirms: the screen blanks, and a button press brings it back. But *that this register is the register that stops the CPU* was an inference from the writes next to it. This screen tests the write alone, with no other part of that sequence. No quantity of tracing of the real app can give that separation. See "CLK control" in [docs/hardware-notes.md](../docs/hardware-notes.md).
 
@@ -245,7 +245,30 @@ Each other screen here reports a number that it measured at startup. This screen
 
 **What it does.** It registers an interrupt handler. It arms Timer1 slowly, at approximately 8Hz. It unmasks the buttons and Timer1. It draws a solid bar across the middle of the screen. It then makes one 32-bit store of `1` to `0x0B000004`. Each step after that store runs only when the CPU runs again. This screen leaves the LCD **on** deliberately, which is different from the sequence of the real app. Thus the result is readable. The handler counts the Timer1 interrupts before the store and after the store separately. See `stop_test_phased` in [`src/cpu.s`](src/cpu.s).
 
-**UP runs the masked mode.** That mode is the same test, but Timer1 stays masked. Only ACTION is unmasked, for the wake, and its handler acknowledges only the buttons. Thus a Timer1 request stays in the hold register of the interrupt controller, and the screen reads it. Each of the four rows is one sample, in the form `CH00NNNN`: `C` is the Timer1 control (`6` = /512 and enabled), `H` is the Timer1 bit of the hold register (`1` = a request), and `NNNN` is the Timer1 count. Row 1 is before the test changes Timer1, row 2 is immediately after the arm and an acknowledge, row 3 is immediately before the store, and row 4 is immediately after the wake. This emulator gives `0000035B`, `600003E7`, `600003DB`, and `600003DA`: no request at any sample. The screen shows the rows of the mode that ran last. See `stop_test_masked` in [`src/cpu.s`](src/cpu.s).
+**The modes.** Each mode keeps its rows, and the screen shows the rows of the selected mode. Each mode arms Timer1 the same way, draws the same bar, and makes the same store.
+
+| mode | function in [`src/cpu.s`](src/cpu.s) | unmasked | rows |
+|---|---|---|---|
+| 0 | `stop_test_phased` | the buttons and Timer1 | the four rows below |
+| 1 | `stop_test_masked` | ACTION | four samples `CH00NNNN` |
+| 2 | `stop_test_instr` | ACTION | the Timer1 count in four sequential instructions |
+| 3 | `stop_test_capture` | ACTION and Timer1 | a record of the first two interrupts |
+| 4 | `stop_test_capture` | the buttons and Timer1 | a record of the first two interrupts |
+
+**Mode 1, the masked mode.** Timer1 stays masked, and the handler acknowledges only the buttons. Thus a Timer1 request stays in the hold register of the interrupt controller, and the screen reads it. Each of the four rows is one sample, in the form `CH00NNNN`: `C` is the Timer1 control (`6` = /512 and enabled), `H` is the Timer1 bit of the hold register (`1` = a request), and `NNNN` is the Timer1 count. Row 1 is before the test changes Timer1, row 2 is immediately after the arm and an acknowledge, row 3 is immediately before the store, and row 4 is immediately after the wake. This emulator gives `0000035B`, `600003E7`, `600003DB`, and `600003DA`: no request at any sample.
+
+**Mode 2, the instruction count.** The same as mode 1, but the rows are the Timer1 count in the instruction before the store (row 1), and in each of the first three instructions after the store (rows 2 to 4). Each one is an `LDR` of the count. Timer1 advances by approximately 1400 ticks near the stop. Thus the first row that shows that advance is the first read after the stop, and the rows before it executed before the stop. This emulator gives `3DB` in all four rows, because Timer1 does not advance near the stop in this emulator.
+
+**Modes 3 and 4, the record of each interrupt.** Timer1 is unmasked, the same as mode 0. Mode 3 unmasks only ACTION of the buttons, and mode 4 unmasks each button, the same as mode 0. Thus a difference between mode 3 and mode 4 is a difference that the direction buttons make. The handler reads the hold register before it acknowledges it. For the first two interrupts of each source, it records the hold register, the Timer1 count, and the phase. Each row holds two values: the first interrupt in the high 4 digits, and the second in the low 4 digits. `FFFF` is a value that no interrupt recorded.
+
+| row | meaning |
+|---|---|
+| 1 | the Timer1 interrupts before the store (high), and after the store (low) |
+| 2 | the hold register at the first and the second interrupt. `0001` is ACTION, `0100` is Timer1. The hold register also shows sources that are masked. |
+| 3 | the Timer1 count at the first and the second interrupt |
+| 4 | the phase of the first and the second interrupt. `0000` is before the store, and `0001` is after it. |
+
+This emulator gives, in both modes, `00000000`, `0281FFFF`, `03DBFFFF`, and `0001FFFF`: one interrupt, after the store, that ACTION gives. An interrupt before the store shows its source in row 2, and the Timer1 count at that time in row 3.
 
 **Press ACTION to wake the device.** LEFT, RIGHT, UP, and DOWN do not wake it, also with their interrupts enabled. See "CLK control" in [docs/hardware-notes.md](../docs/hardware-notes.md).
 

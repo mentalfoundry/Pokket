@@ -1598,10 +1598,18 @@ probe_flash_data:
 draw_stop_rows:
     push {r4, r5, r6, lr}
     ldr r4, =WRAM_STOP_MODE
-    ldr r4, [r4]
-    cmp r4, #1
-    bne 1f
-    ldr r4, =WRAM_STOP_MASKED
+    ldr r6, [r4]
+    cmp r6, #STOP_MODE_COUNT
+    movhs r6, #0
+    mov r0, r6                  @ the mode number, next to the D
+    mov r1, #0
+    mov r2, #4
+    bl draw_glyph
+    cmp r6, #0
+    beq 1f
+    ldr r4, =stop_rows
+    sub r6, r6, #1
+    ldr r4, [r4, r6, lsl #2]
     mov r5, #7
 2:  ldr r0, [r4], #4
     mov r1, r5
@@ -1642,35 +1650,54 @@ draw_stop_rows:
     .ltorg
 
 @ poll_buttons calls this function on screen 13. r5 = the button bits, r0 = the button bits of the
-@ last poll. Down runs stop_test_phased, and Up runs stop_test_masked. -> r1 = 1 if this function
-@ used a press, and 0 if not. Keeps r0 and r4 to r11.
+@ last poll. Up selects the next mode, and Down runs the selected mode:
+@   0  stop_test_phased     the stop test, with a count for each phase
+@   1  stop_test_masked     Timer1 masked, with a sample of the Timer1 request and count
+@   2  stop_test_instr      the Timer1 count in the first three instructions after the store
+@   3  stop_test_capture    Timer1 and ACTION unmasked, with a record of each interrupt
+@   4  stop_test_capture    Timer1 and each button unmasked, with a record of each interrupt
+@ -> r1 = 1 if this function used a press, and 0 if not. Keeps r0 and r4 to r11.
     .global stop_buttons
 stop_buttons:
     push {r0, r4, r5, r6, r7, r8, r9, r10, r11, lr}
-    tst r5, #8                  @ Down
+    ldr r4, =WRAM_STOP_MODE
+    ldr r6, [r4]
+    cmp r6, #STOP_MODE_COUNT
+    movhs r6, #0
+    tst r5, #0x10               @ Up: the next mode
     beq 1f
-    tst r0, #8
+    tst r0, #0x10
     bne 1f
-    ldr r1, =WRAM_STOP_MODE
-    mov r2, #0
-    str r2, [r1]
-    bl stop_test_phased
+    add r6, r6, #1
+    cmp r6, #STOP_MODE_COUNT
+    movhs r6, #0
+    str r6, [r4]
     mov r1, #1
     b 3f
-1:  tst r5, #0x10               @ Up
+1:  tst r5, #8                  @ Down: run the selected mode
     beq 2f
-    tst r0, #0x10
+    tst r0, #8
     bne 2f
-    ldr r1, =WRAM_STOP_MODE
-    mov r2, #1
-    str r2, [r1]
-    bl stop_test_masked
+    str r6, [r4]
+    ldr r1, =stop_modes
+    ldr r1, [r1, r6, lsl #2]
+    mov r0, r6
+    mov lr, pc
+    bx r1
     mov r1, #1
     b 3f
 2:  mov r1, #0
 3:  pop {r0, r4, r5, r6, r7, r8, r9, r10, r11, lr}
     bx lr
     .ltorg
+
+@ The modes of screen 13. Each one gets r0 = the mode.
+stop_modes:
+    .word stop_test_phased      @ 0
+    .word stop_test_masked      @ 1
+    .word stop_test_instr       @ 2
+    .word stop_test_capture     @ 3
+    .word stop_test_capture     @ 4
 
 @ The masked mode of screen 13. It is the same as stop_test_phased, but Timer1 stays masked. Only
 @ ACTION is unmasked, for the wake, and its handler acknowledges only the buttons. Thus each Timer1
@@ -1681,6 +1708,13 @@ stop_buttons:
 @   Row 2: immediately after Timer1 is armed, and after an acknowledge of Timer1.
 @   Row 3: immediately before the store to CLK control.
 @   Row 4: immediately after the wake.
+@ The rows of modes 1 to 4.
+stop_rows:
+    .word WRAM_STOP_MASKED
+    .word WRAM_STOP_M2
+    .word WRAM_STOP_M3
+    .word WRAM_STOP_M4
+
     .global stop_test_masked
 stop_test_masked:
     push {r4, r5, r6, r7, r8, lr}
@@ -1779,8 +1813,245 @@ stop_masked_handler:
     pop {r0, r1, pc}
     .ltorg
 
-@ poll_buttons calls stop_buttons at a press of Down on screen 13. This function does not return
-@ until ACTION wakes the CPU. Keeps r4 to r8.
+@ Mode 2. Timer1 is masked, and only ACTION is unmasked, the same as the masked mode. The rows are
+@ the Timer1 count in the instruction before the store, and in each of the first three instructions
+@ after the store. Each read that occurs after the CPU stops shows the advance of Timer1 near the
+@ stop. Thus the first such row gives the number of instructions that the CPU executes after the
+@ store before it stops.
+stop_test_instr:
+    push {r4, r5, r6, r7, r8, r9, r10, r11, lr}
+    ldr r4, =TIMER1_BASE
+    ldr r10, [r4]                       @ keep Timer1
+    ldr r11, [r4, #8]
+
+    ldr r0, =stop_masked_handler
+    adr lr, 1f
+    ldr r1, =register_irq_handler
+    bx r1
+1:  mov r0, #0                          @ arm Timer1, the same as the other modes
+    str r0, [r4, #8]
+    ldr r0, =STOP_TIMER_PERIOD
+    str r0, [r4]
+    mov r0, #STOP_TIMER_CTRL
+    str r0, [r4, #8]
+    ldr r0, =INTC_BASE
+    ldr r1, =(INT_BUTTON_BITS | INT_TIMER1_BIT)
+    str r1, [r0, #0x10]
+    ldr r0, =INTC_ENABLE                @ unmask only ACTION
+    mov r1, #1                          @ ACTION is bit 0
+    str r1, [r0]
+
+    mov r0, #14                         @ the same bar as the other modes
+    mov r1, #0
+    mov r2, #31
+    bl draw_hline
+    mov r0, #15
+    mov r1, #0
+    mov r2, #31
+    bl draw_hline
+    mov r0, #16
+    mov r1, #0
+    mov r2, #31
+    bl draw_hline
+
+    ldr r0, =CLK_CONTROL_ADDR
+    mov r1, #1
+    ldr r5, [r4, #4]                    @ the count before the store
+    str r1, [r0]                        @ the store under test
+    ldr r6, [r4, #4]                    @ the first instruction after the store
+    ldr r7, [r4, #4]                    @ the second
+    ldr r8, [r4, #4]                    @ the third
+
+    ldr r9, =WRAM_STOP_M2
+    mov r0, #0xFF00
+    orr r0, r0, #0xFF                   @ r0 = FFFF
+    and r5, r5, r0
+    and r6, r6, r0
+    and r7, r7, r0
+    and r8, r8, r0
+    str r5, [r9]
+    str r6, [r9, #4]
+    str r7, [r9, #8]
+    str r8, [r9, #12]
+
+    ldr r0, =INTC_MASK                  @ mask and acknowledge each source
+    mvn r1, #0
+    str r1, [r0]
+    ldr r0, =INTC_BASE
+    str r1, [r0, #0x10]
+    mov r0, #0                          @ remove the handler
+    adr lr, 2f
+    ldr r1, =register_irq_handler
+    bx r1
+2:  mov r0, #0                          @ restore Timer1
+    str r0, [r4, #8]
+    str r10, [r4]
+    str r11, [r4, #8]
+    pop {r4, r5, r6, r7, r8, r9, r10, r11, lr}
+    bx lr
+    .ltorg
+
+@ Modes 3 and 4. r0 = the mode. Timer1 is unmasked, the same as the stop test of mode 0. Mode 3
+@ unmasks only ACTION of the buttons, and mode 4 unmasks each button, the same as mode 0. The handler
+@ counts the Timer1 interrupts in each phase, and it records the first two interrupts of each source:
+@   Row 1: the Timer1 interrupts before the store (bits 16 to 31) and after it (bits 0 to 15).
+@   Row 2: the hold register at the first interrupt (bits 16 to 31) and at the second (bits 0 to 15).
+@   Row 3: the Timer1 count at the first interrupt and at the second, the same way.
+@   Row 4: the phase of the first interrupt and of the second, the same way. 0 = before the store.
+@ FFFF is a value that no interrupt recorded.
+stop_test_capture:
+    push {r4, r5, r6, r7, r8, r9, r10, r11, lr}
+    mov r9, r0
+    ldr r4, =TIMER1_BASE
+    ldr r10, [r4]                       @ keep Timer1
+    ldr r11, [r4, #8]
+
+    mov r0, #0                          @ clear the record
+    ldr r1, =WRAM_CAP_PHASE
+    str r0, [r1]
+    ldr r1, =WRAM_CAP_BEFORE
+    str r0, [r1]
+    ldr r1, =WRAM_CAP_AFTER
+    str r0, [r1]
+    ldr r1, =WRAM_CAP_N
+    str r0, [r1]
+    mvn r0, #0
+    ldr r1, =WRAM_CAP_HOLD
+    str r0, [r1]
+    str r0, [r1, #4]
+    ldr r1, =WRAM_CAP_COUNT
+    str r0, [r1]
+    str r0, [r1, #4]
+    ldr r1, =WRAM_CAP_PH
+    str r0, [r1]
+    str r0, [r1, #4]
+
+    ldr r0, =stop_capture_handler
+    adr lr, 1f
+    ldr r1, =register_irq_handler
+    bx r1
+1:  mov r0, #0                          @ arm Timer1
+    str r0, [r4, #8]
+    ldr r0, =STOP_TIMER_PERIOD
+    str r0, [r4]
+    mov r0, #STOP_TIMER_CTRL
+    str r0, [r4, #8]
+    ldr r0, =INTC_BASE                  @ acknowledge the buttons and Timer1
+    ldr r1, =(INT_BUTTON_BITS | INT_TIMER1_BIT)
+    str r1, [r0, #0x10]
+    cmp r9, #3                          @ mode 3: only ACTION of the buttons
+    ldreq r1, =(1 | INT_TIMER1_BIT)
+    ldr r0, =INTC_ENABLE
+    str r1, [r0]
+
+    mov r0, #14                         @ the same bar as the other modes
+    mov r1, #0
+    mov r2, #31
+    bl draw_hline
+    mov r0, #15
+    mov r1, #0
+    mov r2, #31
+    bl draw_hline
+    mov r0, #16
+    mov r1, #0
+    mov r2, #31
+    bl draw_hline
+
+    ldr r2, =WRAM_CAP_PHASE
+    mov r3, #1
+    ldr r0, =CLK_CONTROL_ADDR
+    mov r1, #1
+    str r3, [r2]                        @ phase 1
+    str r1, [r0]                        @ the store under test
+
+    ldr r0, =INTC_MASK                  @ the CPU runs again here. Mask each source.
+    mvn r1, #0
+    str r1, [r0]
+
+    cmp r9, #3
+    ldreq r8, =WRAM_STOP_M3
+    ldrne r8, =WRAM_STOP_M4
+    ldr r0, =WRAM_CAP_BEFORE
+    ldr r0, [r0]
+    ldr r1, =WRAM_CAP_AFTER
+    ldr r1, [r1]
+    bl stop_pack
+    str r0, [r8]
+    ldr r2, =WRAM_CAP_HOLD
+    ldr r0, [r2]
+    ldr r1, [r2, #4]
+    bl stop_pack
+    str r0, [r8, #4]
+    ldr r2, =WRAM_CAP_COUNT
+    ldr r0, [r2]
+    ldr r1, [r2, #4]
+    bl stop_pack
+    str r0, [r8, #8]
+    ldr r2, =WRAM_CAP_PH
+    ldr r0, [r2]
+    ldr r1, [r2, #4]
+    bl stop_pack
+    str r0, [r8, #12]
+
+    ldr r0, =INTC_BASE                  @ acknowledge each source
+    mvn r1, #0
+    str r1, [r0, #0x10]
+    mov r0, #0                          @ remove the handler
+    adr lr, 2f
+    ldr r1, =register_irq_handler
+    bx r1
+2:  mov r0, #0                          @ restore Timer1
+    str r0, [r4, #8]
+    str r10, [r4]
+    str r11, [r4, #8]
+    pop {r4, r5, r6, r7, r8, r9, r10, r11, lr}
+    bx lr
+    .ltorg
+
+@ r0 = the high value, r1 = the low value -> r0 = (r0 AND FFFF) << 16 OR (r1 AND FFFF). Uses r1.
+stop_pack:
+    mov r0, r0, lsl #16
+    mov r1, r1, lsl #16
+    orr r0, r0, r1, lsr #16
+    bx lr
+
+@ The IRQ callback of modes 3 and 4. It counts the Timer1 interrupts of each phase. For the first two
+@ interrupts of each source, it records the hold register, the Timer1 count, and the phase.
+stop_capture_handler:
+    push {r0, r1, r2, r3, r12, lr}
+    ldr r0, =INTC_BASE
+    ldr r1, [r0]                        @ r1 = the hold register
+    str r1, [r0, #0x10]                 @ acknowledge each pending source
+    ldr r2, =WRAM_CAP_PHASE
+    ldr r2, [r2]                        @ r2 = the phase
+    tst r1, #INT_TIMER1_BIT
+    beq 1f
+    cmp r2, #0
+    ldreq r3, =WRAM_CAP_BEFORE
+    ldrne r3, =WRAM_CAP_AFTER
+    ldr r0, [r3]
+    add r0, r0, #1
+    str r0, [r3]
+1:  ldr r3, =WRAM_CAP_N
+    ldr r0, [r3]
+    cmp r0, #2
+    bhs 9f
+    add r12, r0, #1
+    str r12, [r3]
+    mov r0, r0, lsl #2
+    ldr r3, =WRAM_CAP_HOLD
+    str r1, [r3, r0]
+    ldr r3, =WRAM_CAP_PH
+    str r2, [r3, r0]
+    ldr r1, =TIMER1_BASE
+    ldr r1, [r1, #4]
+    ldr r3, =WRAM_CAP_COUNT
+    str r1, [r3, r0]
+9:  pop {r0, r1, r2, r3, r12, pc}
+    .ltorg
+
+@ Mode 0. poll_buttons calls stop_buttons at a press of Down on screen 13. This function does not
+@ return until ACTION wakes the CPU. Keeps r4 to r8.
     .global stop_test_phased
 stop_test_phased:
     push {r4, r5, r6, r7, r8, lr}

@@ -371,7 +371,23 @@
 .equ WRAM_STOP_RTC,          0x68C
 @ Timer1 COUNT just before the store (bits 16 to 31), and just after the wake (bits 0 to 15).
 .equ WRAM_STOP_T1,           0x690
-@ The mode of the last run of screen 13: 0 = the stop test (Down), 1 = the masked mode (Up).
+@ The selected mode of screen 13 (0 to STOP_MODE_COUNT - 1). Up selects the next mode, and Down
+@ runs it. See stop_buttons in cpu.s.
 .equ WRAM_STOP_MODE,         0x694
-@ 4 words: the four rows of the masked mode. See stop_test_masked in cpu.s.
+.equ STOP_MODE_COUNT,        5
+@ 4 words: the four rows of mode 1, the masked mode. See stop_test_masked in cpu.s.
 .equ WRAM_STOP_MASKED,       0x698
+@ 4 words each: the four rows of modes 2, 3, and 4. See stop_test_instr and stop_test_capture.
+.equ WRAM_STOP_M2,           0x6A8
+.equ WRAM_STOP_M3,           0x6B8
+.equ WRAM_STOP_M4,           0x6C8
+@ The values that the handler of modes 3 and 4 records. The phase (0 before the store, 1 after
+@ it), the Timer1 interrupts in each phase, the number of interrupts that it recorded (0 to 2), and
+@ for the first two interrupts of each source: the hold register, the Timer1 count, and the phase.
+.equ WRAM_CAP_PHASE,         0x6D8
+.equ WRAM_CAP_BEFORE,        0x6DC
+.equ WRAM_CAP_AFTER,         0x6E0
+.equ WRAM_CAP_N,             0x6E4
+.equ WRAM_CAP_HOLD,          0x6E8
+.equ WRAM_CAP_COUNT,         0x6F0
+.equ WRAM_CAP_PH,            0x6F8

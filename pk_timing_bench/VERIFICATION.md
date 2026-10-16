@@ -67,7 +67,7 @@ The period is 1017, and not 1016, because a timer that is armed with P runs P+1 
 
 ## Screen 13: does bit 0 of CLK control stop the CPU?
 
-This screen is interactive. A person presses DOWN to run it, and then waits before a press of ACTION wakes the device. Only ACTION wakes it. The emulator row below comes from an interactive control run.
+This screen is interactive. A person selects a mode with UP, presses DOWN to run it, and then waits before a press of ACTION wakes the device. Only ACTION wakes it. The emulator row below comes from an interactive control run.
 
 | Source | Seconds stopped | Timer1 IRQs | `CLK control` readback | Date |
 |---|---|---|---|---|
@@ -78,7 +78,7 @@ The seconds row compares directly, because the emulated RTC keeps true 1Hz time.
 
 **The readback row of the emulator needs a new run.** The recorded run gave `0x00000000`, and that value came from the model that returned the stored control word. `clk_read8` in `core/src/clk.c` now models the measured hardware behavior: both words read back as `CLK_MODE` with the steady bit (`0x10`) ORed in. This app sets `CLK_MODE 7`, thus the modeled readback is now `0x17`. No interactive run has confirmed that value since the correction.
 
-**The screen with a count for each phase.** This version shows four rows (see "Screen 13" in [README.md](README.md)). `tools/bench_probe.c` runs it in this emulator, with a press of ACTION.
+**Mode 0, the stop test with a count for each phase.** This version shows four rows (see "Screen 13" in [README.md](README.md)). `tools/bench_probe.c` runs it in this emulator, with a press of ACTION.
 
 | Source | Row 1 (seconds) | Row 2 (IRQs before / after) | Row 3 (RTC seconds) | Row 4 (Timer1 before / after) | Date |
 |---|---|---|---|---|---|
@@ -87,7 +87,7 @@ The seconds row compares directly, because the emulated RTC keeps true 1Hz time.
 | This emulator, a stop of 13 seconds | `0x0000000D` | `0x00000000` | `0x19FFFF32` | `0x03DB03DA` | 2026-10-16 |
 
 
-**The masked mode (UP).** Each row is `CH00NNNN`: the Timer1 control, the Timer1 bit of the hold register, and the Timer1 count.
+**Mode 1, the masked mode.** The hardware runs below used the build in which UP started this mode. The code of the mode is the same. Each row is `CH00NNNN`: the Timer1 control, the Timer1 bit of the hold register, and the Timer1 count.
 
 | Source | Row 1 (before the test) | Row 2 (after the arm) | Row 3 (before the store) | Row 4 (after the wake) | Date |
 |---|---|---|---|---|---|
@@ -101,6 +101,19 @@ Across each stop, the Timer1 count passes zero one time, and a request is in the
 The build of 2026-08-03 (`a1ec1f9`), on the same unit, on 2026-10-16: `0x0000000B`, `0x00000001`, `0x00000017`. The code of screen 13 in that build is the same as in the build that the second unit used. Thus the build does not cause the result of `0x00000000` on 2026-08-03.
 
 In the stop test, row 4 gives the same count before and after the stop. That row reads the count in the first instruction after the store. The masked mode reads it in the second instruction, and it gives the advance. Thus the CPU can execute one instruction after the store before it stops. No test confirms that. Before the store, Timer1 counted approximately 109 of its 1000 ticks, thus the interrupt before the store is not an expiry. The second run acknowledges the buttons and Timer1 before the unmask, and it also counts that interrupt. Thus it is not a request that an earlier expiry latched, and no measurement explains it. The interrupt after the store arrives in the second of the wake, and the advance of Timer1 near the stop gives it. A second unit counted 1 or 2 interrupts in total, on each of five runs of the earlier version, which showed only the total.
+
+**Mode 2, the instruction count.** Rows 1 to 4 are the Timer1 count in the instruction before the store, and in the first, second, and third instructions after it. The first row that shows the advance of Timer1 is the first read after the stop. No real-hardware run yet.
+
+| Source | Row 1 (before) | Row 2 (1st after) | Row 3 (2nd after) | Row 4 (3rd after) | Date |
+|---|---|---|---|---|---|
+| This emulator | `0x000003DB` | `0x000003DB` | `0x000003DB` | `0x000003DB` | 2026-10-16 |
+
+**Modes 3 and 4, the record of each interrupt.** Mode 3 unmasks ACTION and Timer1, and mode 4 unmasks each button and Timer1. Each row holds the first interrupt (high) and the second interrupt (low): row 1 the Timer1 interrupts before and after the store, row 2 the hold register, row 3 the Timer1 count, and row 4 the phase. No real-hardware run yet.
+
+| Source | Row 1 | Row 2 | Row 3 | Row 4 | Date |
+|---|---|---|---|---|---|
+| This emulator, mode 3 | `0x00000000` | `0x0281FFFF` | `0x03DBFFFF` | `0x0001FFFF` | 2026-10-16 |
+| This emulator, mode 4 | `0x00000000` | `0x0281FFFF` | `0x03DBFFFF` | `0x0001FFFF` | 2026-10-16 |
 
 ## Screen 14: the two interrupt-line rates of the RTC
 

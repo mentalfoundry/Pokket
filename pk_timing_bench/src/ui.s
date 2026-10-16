@@ -486,8 +486,8 @@ pb_check_right:
     ldr r6, =WRAM_BUTTON_DEBOUNCE
     ldr r0, [r6]
 
-    @ On the stop-test screen, Down runs the stop test, and Up runs its masked
-    @ mode. See stop_buttons in cpu.s.
+    @ On the stop-test screen, Up selects the next mode, and Down runs the
+    @ selected mode. See stop_buttons in cpu.s.
     @ A stop test does not return until ACTION wakes the CPU. Thus sample the
     @ live button bits again, so that the debounce state below holds the
     @ buttons of NOW. If not, the next poll reads the waking button as a new

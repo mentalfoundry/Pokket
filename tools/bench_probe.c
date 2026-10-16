@@ -26,6 +26,7 @@
 #define WRAM_DIAG_SINGLE_BEFORE 0x280u
 #define WRAM_CPU_RESULTS 0x570u
 #define WRAM_PROBE_SEL 0x610u
+#define WRAM_STOP_MODE 0x694u
 #define WRAM_PROBE_ROWS 0x614u
 
 static uint8_t *read_file(const char *path, size_t *out_size) {
@@ -75,7 +76,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "usage: %s <bios.bin> <app.mcs> [frames] [pages] [probe]\n", argv[0]);
         fprintf(stderr, "  pages: screen number to page to after launch (0 = leave wherever it lands)\n");
         fprintf(stderr, "  probe: with pages = 29, the probe to select and run with Down\n");
-        fprintf(stderr, "         with pages = 13, 1 runs the masked mode (Up), and each other value runs the stop test (Down). ACTION wakes the CPU\n");
+        fprintf(stderr, "         with pages = 13, the mode of screen 13 (0 to 4), which Down runs. ACTION wakes the CPU\n");
         return 1;
     }
     bios = read_file(argv[1], &bios_size);
@@ -151,13 +152,13 @@ int main(int argc, char **argv) {
     }
 
     /* Screen 29 runs a probe only at a press of Down. Write the selection directly, then press Down
-       and release it, the same way as the RIGHT presses above. */
+       and release it, the same way as the RIGHT presses above. On screen 13, the selection is the
+       mode of that screen. */
     if (probe >= 0) {
         int k;
-        psemu_bus_write32(&ps->bus, WRAM_PROBE_SEL, (uint32_t)probe);
+        psemu_bus_write32(&ps->bus, pages == 13 ? WRAM_STOP_MODE : WRAM_PROBE_SEL, (uint32_t)probe);
         for (k = 0; k < 10; k++) {
-            /* On screen 13, probe 1 selects the masked mode, which Up starts. */
-            psemu_set_buttons(ps, (pages == 13 && probe == 1) ? PSEMU_BUTTON_UP : PSEMU_BUTTON_DOWN);
+            psemu_set_buttons(ps, PSEMU_BUTTON_DOWN);
             psemu_run(ps, 33000u);
         }
         for (k = 0; k < 20; k++) {
@@ -185,6 +186,12 @@ int main(int argc, char **argv) {
             printf("screen13 masked rows @0x698: 0x%08X 0x%08X 0x%08X 0x%08X\n", psemu_bus_read32(&ps->bus, 0x698u),
                 psemu_bus_read32(&ps->bus, 0x69Cu), psemu_bus_read32(&ps->bus, 0x6A0u),
                 psemu_bus_read32(&ps->bus, 0x6A4u));
+            for (k = 2; k <= 4; k++) {
+                uint32_t base = 0x6A8u + 0x10u * (uint32_t)(k - 2);
+                printf("screen13 mode %d rows @0x%03X: 0x%08X 0x%08X 0x%08X 0x%08X\n", k, base,
+                    psemu_bus_read32(&ps->bus, base), psemu_bus_read32(&ps->bus, base + 4u),
+                    psemu_bus_read32(&ps->bus, base + 8u), psemu_bus_read32(&ps->bus, base + 12u));
+            }
         }
     }
 
