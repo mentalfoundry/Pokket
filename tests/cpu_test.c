@@ -3302,6 +3302,12 @@ static void test_msr_decode(void) {
         put32(ps, 0x04, 0xE16FF000u); /* MSR SPSR_fsxc, r0 */
         arm7tdmi_step(&ps->cpu);
         assert(ps->cpu.spsr_bank[arm_current_bank(&ps->cpu)] == 0x00000015u);
+        /* Mode bit 4 of the CPSR is also always 1. In Supervisor mode, MSR CPSR_c with mode 03 keeps
+           mode 13 (probe 21). */
+        ps->cpu.r[0] = (ps->cpu.cpsr & 0xE0u) | 0x03u;
+        put32(ps, 0x08, 0xE121F000u); /* MSR CPSR_c, r0 */
+        arm7tdmi_step(&ps->cpu);
+        assert((ps->cpu.cpsr & CPSR_MODE_MASK) == ARM_MODE_SVC);
         psemu_destroy(ps);
     }
     printf("test_msr_decode OK\n");

@@ -339,7 +339,7 @@ static void exec_msr(arm7tdmi_t *cpu, uint32_t instr, uint32_t pc) {
         *spsr = (*spsr & ~byte_mask) | (value & byte_mask);
         /* Mode bit 4 of the SPSR always reads as 1: a write of mode 05 reads back as 15, and C3 reads
            back as D3 (screen 29 of pk_timing_bench, probe 20). Thus the SPSR cannot hold a 26-bit
-           mode. No test shows the same bit of the CPSR. */
+           mode. The CPSR does the same. See below. */
         *spsr |= 0x10u;
         return;
     }
@@ -364,6 +364,10 @@ static void exec_msr(arm7tdmi_t *cpu, uint32_t instr, uint32_t pc) {
        hardware confirms (screen 29 of pk_timing_bench, probe 16). This code also keeps bits 8 to 23 at
        0. No test on real hardware shows those bits. */
     byte_mask &= 0xF00000FFu;
+    /* Mode bit 4 of the CPSR is always 1. In Supervisor mode, a write of mode 03, the 26-bit
+       Supervisor mode, reads back as 13, and the mode does not change (screen 29 of pk_timing_bench,
+       probe 21). */
+    value |= 0x10u;
 
     if ((byte_mask & 0xFFu) && (value & CPSR_MODE_MASK) != (cpu->cpsr & CPSR_MODE_MASK)) {
         arm_set_mode(cpu, value & CPSR_MODE_MASK); /* re-banks r13/r14 for the new mode */
