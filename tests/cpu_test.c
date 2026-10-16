@@ -2913,7 +2913,18 @@ static void test_clk_stop_halts_until_a_button_wakes_it(void) {
         assert(ps->cpu.total_steps == steps); /* still stopped: an RTC tick is not a wake */
     }
 
-    /* A button is external to this clock, so it wakes the CPU, and the wake clears the bit. */
+    /* Of the buttons, only ACTION wakes the CPU. LEFT, RIGHT, UP, and DOWN do not, also with their
+       interrupts enabled (screen 13 of pk_timing_bench, and the idle sleep of the BIOS). */
+    psemu_bus_write32(&ps->bus, PSEMU_INTC_BASE + 0x8,
+                      INT_BTN_LEFT | INT_BTN_RIGHT | INT_BTN_UP | INT_BTN_DOWN);
+    psemu_set_buttons(ps, PSEMU_BUTTON_LEFT | PSEMU_BUTTON_RIGHT | PSEMU_BUTTON_UP | PSEMU_BUTTON_DOWN);
+    psemu_run(ps, 10000u);
+    assert(clk_stop_requested(&ps->clk));
+    assert(ps->cpu.total_steps == steps);
+    psemu_set_buttons(ps, 0);
+    psemu_run(ps, 10000u);
+
+    /* ACTION wakes the CPU, and the wake clears the bit. */
     psemu_set_buttons(ps, PSEMU_BUTTON_FIRE);
     psemu_run(ps, 10000u);
     assert(!clk_stop_requested(&ps->clk));

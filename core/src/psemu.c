@@ -748,15 +748,15 @@ static void run_until(psemu_t *ps, uint64_t end, int stop_at_ack) {
            rtc.h). The DAC resample function uses the fixed output rate of this emulator, which no
            hardware clocks.
 
-           A button is an external signal, and this clock does not drive it. Thus a button can wake
-           the CPU. The RTC uses a separate oscillator (see rtc.h), and it ticks during a clock stop.
-           Thus an RTC tick can also wake the CPU. An app that steps a walking animation enters clock
-           stop between frames and waits for INT_RTC. The wake operation clears the CLK_STOP bit.
-           One fact is unconfirmed: whether real hardware clears the CLK_STOP bit automatically, or
-           whether the kernel clears it. */
+           Of the buttons, only ACTION wakes the CPU. On real hardware, LEFT, RIGHT, UP, and DOWN do not
+           end a clock stop, also with their interrupts enabled (screen 13 of pk_timing_bench, and the
+           idle sleep of the BIOS). The RTC uses a separate oscillator (see rtc.h), and it ticks during
+           a clock stop. Thus an RTC tick can also wake the CPU. An app that steps a walking animation
+           enters clock stop between frames and waits for INT_RTC. No test on real hardware confirms
+           the RTC wake. The wake operation clears the CLK_STOP bit. One fact is unconfirmed: whether
+           real hardware clears the CLK_STOP bit automatically, or whether the kernel clears it. */
         if (clk_stop_requested(&ps->clk)) {
-            static const uint32_t WAKE_SOURCES =
-                INT_BTN_ACTION | INT_BTN_RIGHT | INT_BTN_LEFT | INT_BTN_DOWN | INT_BTN_UP | INT_RTC;
+            static const uint32_t WAKE_SOURCES = INT_BTN_ACTION | INT_RTC;
             if (ps->intc.hold & ps->intc.enable & WAKE_SOURCES) {
                 clk_clear_stop(&ps->clk);
             } else {

@@ -130,7 +130,7 @@ The CPU clock speed is variable, and `CLK_MODE` controls it. See "CLK_MODE" belo
 | `0x08000000` | 128KB | FLASH2 — physical flash, 15 blocks. |
 | `0x0A000000` | 0x14 | Interrupt controller: hold(+0x0, R), status(+0x4, R), enable(+0x8, W, ORs in), mask(+0xC, W, ANDs matching bits out of enable), acknowledge(+0x10, W, clears matching hold+status bits). |
 | `0x0A800000`+ | 0x30 | 3 timers, 0x10 bytes apart: period(+0x0), count(+0x4), control(+0x8, bits0-1 = clock divisor, bit2 = enable). |
-| `0x0B000000`+ | 0x8 | `CLK_MODE`(+0x0) - CPU/timer clock speed control. `CLK control`(+0x4) bit0 - stop/standby, halts the CPU and the timers until a button wakes them. A real-hardware test confirms this. Both words read back as `CLK_MODE`, thus `+0x4` has no readable stop status (see "CLK control" below). |
+| `0x0B000000`+ | 0x8 | `CLK_MODE`(+0x0) - CPU/timer clock speed control. `CLK control`(+0x4) bit0 - stop/standby, halts the CPU and the timers until the ACTION button wakes them. A real-hardware test confirms this. Both words read back as `CLK_MODE`, thus `+0x4` has no readable stop status (see "CLK control" below). |
 | `0x0B800000` | 0x10 | RTC: mode(+0x0), control/adjust(+0x4), time(+0x8, R), date(+0xC, R). |
 | `0x0C000000`+ | 0x20 | Communication port to a PS1: `COM_MODE`(+0x0), `COM_STAT1`(+0x4), `COM_DATA`(+0x8), `COM_CTRL1`(+0x10), `COM_STAT2`(+0x14), `COM_CTRL2`(+0x18). See "Communication port". |
 | `0x0C800000`+ | 0x10 | IR: `IRDA_MODE`(+0x0, protocol/send-receive mode), `IRDA_DATA`(+0x4, beam on/off), `IRDA_MISC`(+0xC, unknown/reserved). See "IR / IR Link". |
@@ -804,7 +804,9 @@ The machine after the skip is the same, bit for bit, as the machine after the it
 
 ## CLK control (0x0B000004): stop/standby
 
-**Bit 0 of the second `CLK` register halts the CPU, and each other part that this same oscillator clocks, until a button wakes the CPU.** This is the sleep method of a PocketStation.
+**Bit 0 of the second `CLK` register halts the CPU, and each other part that this same oscillator clocks, until the ACTION button wakes the CPU.** This is the sleep method of a PocketStation.
+
+**Only the ACTION button wakes the CPU.** Screen 13 of `pk_timing_bench` enables the interrupts of all five buttons before the stop, and only ACTION ends it. The idle sleep of the BIOS gives the same result on a real unit: LEFT, RIGHT, UP, and DOWN do not wake the device, and ACTION does. `WAKE_SOURCES` in `psemu_run` (`core/src/psemu.c`) holds this rule. The RTC interrupt is the other wake source of this emulator. No test on real hardware confirms the RTC wake.
 
 **Confirmed by a direct test on a real retail unit.** Screen 13 of `pk_timing_bench` makes the store to this register alone, with no other part of the power-down sequence of a real app. It registers an interrupt handler, it arms Timer1 at approximately 8Hz, it unmasks the buttons and Timer1, and it then writes `1` to `0x0B000004`. With a wait of approximately 10 seconds before a button press, the device reported 10 seconds of RTC time across the store, and **zero** Timer1 interrupts. See `pk_timing_bench/VERIFICATION.md`.
 
