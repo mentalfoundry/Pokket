@@ -1656,6 +1656,8 @@ draw_stop_rows:
 @   2  stop_test_instr      the Timer1 count in the first three instructions after the store
 @   3  stop_test_capture    Timer1 and ACTION unmasked, with a record of each interrupt
 @   4  stop_test_capture    Timer1 and each button unmasked, with a record of each interrupt
+@   5  stop_test_held       the hold bit of a held button, with each source masked
+@   6  stop_test_instr      the same as mode 2, with a MOV of 1 cycle after the store
 @ -> r1 = 1 if this function used a press, and 0 if not. Keeps r0 and r4 to r11.
     .global stop_buttons
 stop_buttons:
@@ -1698,6 +1700,8 @@ stop_modes:
     .word stop_test_instr       @ 2
     .word stop_test_capture     @ 3
     .word stop_test_capture     @ 4
+    .word stop_test_held        @ 5
+    .word stop_test_instr       @ 6
 
 @ The masked mode of screen 13. It is the same as stop_test_phased, but Timer1 stays masked. Only
 @ ACTION is unmasked, for the wake, and its handler acknowledges only the buttons. Thus each Timer1
@@ -1714,6 +1718,8 @@ stop_rows:
     .word WRAM_STOP_M2
     .word WRAM_STOP_M3
     .word WRAM_STOP_M4
+    .word WRAM_STOP_M5
+    .word WRAM_STOP_M6
 
     .global stop_test_masked
 stop_test_masked:
@@ -1813,13 +1819,16 @@ stop_masked_handler:
     pop {r0, r1, pc}
     .ltorg
 
-@ Mode 2. Timer1 is masked, and only ACTION is unmasked, the same as the masked mode. The rows are
-@ the Timer1 count in the instruction before the store, and in each of the first three instructions
-@ after the store. Each read that occurs after the CPU stops shows the advance of Timer1 near the
-@ stop. Thus the first such row gives the number of instructions that the CPU executes after the
-@ store before it stops.
+@ Modes 2 and 6. r0 = the mode. Timer1 is masked, and only ACTION is unmasked, the same as the
+@ masked mode. Mode 2: the rows are the Timer1 count in the instruction before the store, and in
+@ each of the first three instructions after the store. Mode 6: the same, but a MOV of 1 cycle is
+@ the first instruction after the store, and the three reads follow it. While ACTION stays down
+@ after the wake, the CPU executes only the interrupt handler, and Timer1 counts. Thus each read
+@ after the stop gives a different count from a read before the stop, and the first such row gives
+@ the number of instructions that the CPU executes after the store before it stops.
 stop_test_instr:
     push {r4, r5, r6, r7, r8, r9, r10, r11, lr}
+    mov r9, r0
     ldr r4, =TIMER1_BASE
     ldr r10, [r4]                       @ keep Timer1
     ldr r11, [r4, #8]
@@ -1856,13 +1865,24 @@ stop_test_instr:
 
     ldr r0, =CLK_CONTROL_ADDR
     mov r1, #1
+    cmp r9, #6
+    beq 3f
     ldr r5, [r4, #4]                    @ the count before the store
     str r1, [r0]                        @ the store under test
     ldr r6, [r4, #4]                    @ the first instruction after the store
     ldr r7, [r4, #4]                    @ the second
     ldr r8, [r4, #4]                    @ the third
+    b 4f
+3:  ldr r5, [r4, #4]                    @ mode 6: the count before the store
+    str r1, [r0]                        @ the store under test
+    mov r0, r0                          @ the first instruction after the store: 1 cycle
+    ldr r6, [r4, #4]                    @ the second
+    ldr r7, [r4, #4]                    @ the third
+    ldr r8, [r4, #4]                    @ the fourth
 
-    ldr r9, =WRAM_STOP_M2
+4:  cmp r9, #6
+    ldreq r9, =WRAM_STOP_M6
+    ldrne r9, =WRAM_STOP_M2
     mov r0, #0xFF00
     orr r0, r0, #0xFF                   @ r0 = FFFF
     and r5, r5, r0
@@ -2005,6 +2025,61 @@ stop_test_capture:
     str r10, [r4]
     str r11, [r4, #8]
     pop {r4, r5, r6, r7, r8, r9, r10, r11, lr}
+    bx lr
+    .ltorg
+
+@ Mode 5. It does not stop the CPU. The press of DOWN that starts it is still down at the start.
+@ Each row is the hold register (bits 16 to 31) and the status register (bits 0 to 15). DOWN is
+@ bit 3 (8) of each register.
+@   Row 1: at the start, before this test changes the interrupt controller.
+@   Row 2: immediately after the mask of each source and an acknowledge of DOWN.
+@   Row 3: approximately 10 ms after row 2, with each source still masked.
+@   Row 4: after one more acknowledge of DOWN, then the release of DOWN, then approximately 10 ms.
+@ Each source stays masked at the end, the same as after the other modes.
+stop_test_held:
+    push {r4, r5, r6, lr}
+    ldr r4, =INTC_BASE
+    ldr r5, =WRAM_STOP_M5
+    bl held_sample
+    str r0, [r5]
+
+    mvn r1, #0                          @ mask each source
+    str r1, [r4, #0xC]
+    mov r1, #8                          @ acknowledge DOWN
+    str r1, [r4, #0x10]
+    bl held_sample
+    str r0, [r5, #4]
+
+    bl held_delay
+    bl held_sample
+    str r0, [r5, #8]
+
+    mov r1, #8                          @ acknowledge DOWN
+    str r1, [r4, #0x10]
+1:  ldr r0, [r4, #4]                    @ wait for the release of DOWN
+    tst r0, #8
+    bne 1b
+    bl held_delay
+    bl held_sample
+    str r0, [r5, #12]
+    pop {r4, r5, r6, lr}
+    bx lr
+
+@ r4 = INTC_BASE -> r0 = the hold register (bits 16 to 31) and the status register (bits 0 to 15).
+@ Uses r1.
+held_sample:
+    ldr r0, [r4]
+    ldr r1, [r4, #4]
+    mov r0, r0, lsl #16
+    mov r1, r1, lsl #16
+    orr r0, r0, r1, lsr #16
+    bx lr
+
+@ Approximately 10 ms at CLK_MODE 7. Uses r0.
+held_delay:
+    ldr r0, =10000
+1:  subs r0, r0, #1
+    bne 1b
     bx lr
     .ltorg
 

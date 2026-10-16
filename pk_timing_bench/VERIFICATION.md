@@ -96,24 +96,46 @@ The seconds row compares directly, because the emulated RTC keeps true 1Hz time.
 | Real hardware, after a probe of screen 29 | `0x000001DB` | `0x600003E7` | `0x600003DB` | `0x61000279` | 2026-10-16 |
 | This emulator | `0x0000035B` | `0x600003E7` | `0x600003DB` | `0x600003DA` | 2026-10-16 |
 
-Across each stop, the Timer1 count passes zero one time, and a request is in the hold register after the wake. That is 1448, 1427, and 1354 ticks at /512, thus Timer1 runs for 173 to 185 ms near each stop of approximately 12 seconds. In this emulator, Timer1 does not advance.
+Between row 3 and row 4, Timer1 counts 1448, 1427, and 1354 ticks at /512, which is 173 to 185 ms. The count passes zero one time, thus a request is in the hold register at row 4. That time is the time that ACTION stayed down after the wake (see modes 3 and 0 below). In this emulator, Timer1 does not advance.
 
 The build of 2026-08-03 (`a1ec1f9`), on the same unit, on 2026-10-16: `0x0000000B`, `0x00000001`, `0x00000017`. The code of screen 13 in that build is the same as in the build that the second unit used. Thus the build does not cause the result of `0x00000000` on 2026-08-03.
 
-In the stop test, row 4 gives the same count before and after the stop. That row reads the count in the first instruction after the store. The masked mode reads it in the second instruction, and it gives the advance. Thus the CPU can execute one instruction after the store before it stops. No test confirms that. Before the store, Timer1 counted approximately 109 of its 1000 ticks, thus the interrupt before the store is not an expiry. The second run acknowledges the buttons and Timer1 before the unmask, and it also counts that interrupt. Thus it is not a request that an earlier expiry latched, and no measurement explains it. The interrupt after the store arrives in the second of the wake, and the advance of Timer1 near the stop gives it. A second unit counted 1 or 2 interrupts in total, on each of five runs of the earlier version, which showed only the total.
+In the stop test, row 4 gives the same count before and after the stop, because that read is in the first instruction after the store, and the CPU executes that instruction before it stops (mode 2 below). The interrupt before the store comes from the press of DOWN that starts the mode, and the interrupt after the store comes from the press of ACTION that wakes it (modes 3, 4, and 0 below). A second unit counted 1 or 2 interrupts in total, on each of five runs of the earlier version, which showed only the total.
 
-**Mode 2, the instruction count.** Rows 1 to 4 are the Timer1 count in the instruction before the store, and in the first, second, and third instructions after it. The first row that shows the advance of Timer1 is the first read after the stop. No real-hardware run yet.
+**Mode 2, the instruction count.** Rows 1 to 4 are the Timer1 count in the instruction before the store, and in the first, second, and third instructions after it. The first row that gives a different count is the first read after the stop.
 
 | Source | Row 1 (before) | Row 2 (1st after) | Row 3 (2nd after) | Row 4 (3rd after) | Date |
 |---|---|---|---|---|---|
+| Real hardware | `0x000003DB` | `0x000003DB` | `0x000002FE` | `0x000002FE` | 2026-10-16 |
 | This emulator | `0x000003DB` | `0x000003DB` | `0x000003DB` | `0x000003DB` | 2026-10-16 |
 
-**Modes 3 and 4, the record of each interrupt.** Mode 3 unmasks ACTION and Timer1, and mode 4 unmasks each button and Timer1. Each row holds the first interrupt (high) and the second interrupt (low): row 1 the Timer1 interrupts before and after the store, row 2 the hold register, row 3 the Timer1 count, and row 4 the phase. No real-hardware run yet.
+On real hardware, the CPU executes one instruction after the store before it stops. In this emulator, the CPU stops before that instruction.
+
+**Mode 6, a `MOV` of 1 cycle after the store.** The same rows as mode 2, but the reads are in the second, third, and fourth instructions after the store. No real-hardware run yet.
+
+| Source | Row 1 (before) | Row 2 (2nd after) | Row 3 (3rd after) | Row 4 (4th after) | Date |
+|---|---|---|---|---|---|
+| This emulator | `0x000003DB` | `0x000003DB` | `0x000003DB` | `0x000003DB` | 2026-10-16 |
+
+**Mode 5, the hold bit of a held button.** Each row is the hold register (high) and the status register (low). Row 1 is at the start, with DOWN down. Row 2 is after the mask of each source and an acknowledge of DOWN. Row 3 is approximately 10 ms later. Row 4 is after the release of DOWN. No real-hardware run yet.
 
 | Source | Row 1 | Row 2 | Row 3 | Row 4 | Date |
 |---|---|---|---|---|---|
+| This emulator | `0x00880008` | `0x00800008` | `0x00800008` | `0x02800200` | 2026-10-16 |
+
+**Modes 3 and 4, the record of each interrupt.** Mode 3 unmasks ACTION and Timer1, and mode 4 unmasks each button and Timer1. Each row holds the first interrupt (high) and the second interrupt (low): row 1 the Timer1 interrupts before and after the store, row 2 the hold register, row 3 the Timer1 count, and row 4 the phase.
+
+| Source | Row 1 | Row 2 | Row 3 | Row 4 | Date |
+|---|---|---|---|---|---|
+| Real hardware, mode 3, a short press of ACTION | `0x00000000` | `0x02810001` | `0x03DA03DA` | `0x00010001` | 2026-10-16 |
+| Real hardware, mode 4, a short press of ACTION | `0x00010001` | `0x02880008` | `0x03E703E7` | `0x00000000` | 2026-10-16 |
+| Real hardware, mode 3, ACTION down for approximately 3 seconds | `0x0000001D` | `0x02810001` | `0x03DA03D9` | `0x00010001` | 2026-10-16 |
 | This emulator, mode 3 | `0x00000000` | `0x0281FFFF` | `0x03DBFFFF` | `0x0001FFFF` | 2026-10-16 |
 | This emulator, mode 4 | `0x00000000` | `0x0281FFFF` | `0x03DBFFFF` | `0x0001FFFF` | 2026-10-16 |
+
+In mode 3, the first two interrupts are ACTION, and Timer1 has the count of the store at both. With ACTION down for approximately 3 seconds, the handler counts 29 Timer1 interrupts after the store. Mode 3 masks each source within three instructions after the code of the mode runs again. Thus the code of the mode does not run while ACTION stays down, and the CPU executes only the interrupt handler. In mode 4, the first two interrupts are DOWN, before the store, at the start count of Timer1. That is the press of DOWN that starts the mode. The mode acknowledges DOWN before the unmask, and the request comes back while DOWN stays down.
+
+**Mode 0 with ACTION down for approximately 6 seconds** (real hardware, 2026-10-16): row 1 `0x00000011`, row 2 `0x0001002B`, row 3 `0x38494955`, row 4 `0x02E902E9`. The RTC gives the store at second 38, the first Timer1 interrupt after the store at second 49, and the code of the mode again at second 55. The 43 Timer1 interrupts after the store are approximately 5.5 seconds. Thus the code of the mode runs again only at the release of ACTION. The interrupt before the store in mode 0 is the same effect with DOWN: the mode unmasks DOWN while the press that starts it is still down, and Timer1 expires one time before the code reaches the store.
 
 ## Screen 14: the two interrupt-line rates of the RTC
 

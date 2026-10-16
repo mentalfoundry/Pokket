@@ -36,6 +36,8 @@
 .equ WRAM_EXIT_PROMPT_SELECTION, 0x268
 @ The screen to restore if CONTINUE is chosen.
 .equ WRAM_SAVED_SCREEN_INDEX,    0x26C
+@ 4 words: the four rows of mode 6 of screen 13. See stop_test_instr in cpu.s.
+.equ WRAM_STOP_M6,           0x270
 
 @ Diagnostic screen 5 (see ../README.md's "Timer0 wraps at 0x10000" finding) -
 @ raw Timer0 snapshots, not deltas, around a single isolated real BIOS call
@@ -355,6 +357,8 @@
 @ 8 words: the WRAM copy of the probe target. See probe_pad in cpu.s.
 .equ WRAM_PROBE_PAD,         0x650
 .equ PROBE_COUNT,            35
+@ 4 words: the four rows of mode 5 of screen 13. See stop_test_held in cpu.s.
+.equ WRAM_STOP_M5,           0x670
 @ The watchdog: Timer1 at /32 with this period expires after (period + 1) * 32 cycles, which is
 @ approximately 8ms at CLK_MODE 7.
 .equ PROBE_WATCHDOG_PERIOD,  999
@@ -374,10 +378,11 @@
 @ The selected mode of screen 13 (0 to STOP_MODE_COUNT - 1). Up selects the next mode, and Down
 @ runs it. See stop_buttons in cpu.s.
 .equ WRAM_STOP_MODE,         0x694
-.equ STOP_MODE_COUNT,        5
+.equ STOP_MODE_COUNT,        7
 @ 4 words: the four rows of mode 1, the masked mode. See stop_test_masked in cpu.s.
 .equ WRAM_STOP_MASKED,       0x698
 @ 4 words each: the four rows of modes 2, 3, and 4. See stop_test_instr and stop_test_capture.
+@ The rows of modes 5 and 6 are in two free areas: WRAM_STOP_M5 and WRAM_STOP_M6.
 .equ WRAM_STOP_M2,           0x6A8
 .equ WRAM_STOP_M3,           0x6B8
 .equ WRAM_STOP_M4,           0x6C8
