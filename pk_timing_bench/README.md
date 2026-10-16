@@ -63,7 +63,7 @@ This app runs its startup measurements one time, at power-on. A person then page
 - **LEFT**: the previous screen
 - The screens wrap around: 1 to 11, then screen 13, then screen 14, then screen 15, then screens 16 to 29, then 1. Thus LEFT from screen 1 goes directly to screen 29. No screen stops the device. See "Screens 19 to 28" below.
 - **UP** and **DOWN**, on screen 29 only, select a probe and run it. See "Screen 29" below.
-- **DOWN**, on screen 13 only, runs the CLK stop test. That is the one measurement here that does not run at startup, because only a button press from a person can end it. See "Screen 13" below.
+- **DOWN**, on screen 13 only, runs the CLK stop test. That is the one measurement here that does not run at startup, because only a press of ACTION from a person can end it. See "Screen 13" below.
 - **DOWN**, on screen 15 only, arms the COM timing run before the device goes into a memory card slot, and it clears the captures of the run before. **UP**, on screen 15 only, shows the next stored capture after the device comes out. See "Screen 15" below.
 - **A hold on ACTION** opens a CONTINUE/EXIT prompt. That prompt returns to the system without a hardware reset. UP selects CONTINUE, DOWN selects EXIT, and a new ACTION press confirms the selection. See "Screen index used for the continue/exit prompt" in `src/constants.inc`, and `pb_prompt_confirm_exit` in `src/ui.s`, for the full behavior.
 
@@ -245,6 +245,8 @@ Each other screen here reports a number that it measured at startup. This screen
 
 **What it does.** It registers an interrupt handler. It arms Timer1 slowly, at approximately 8Hz. It unmasks the buttons and Timer1. It draws a solid bar across the middle of the screen. It then makes one 32-bit store of `1` to `0x0B000004`. Each step after that store runs only when the CPU runs again. This screen leaves the LCD **on** deliberately, which is different from the sequence of the real app. Thus the result is readable. The handler counts the Timer1 interrupts before the store and after the store separately. See `stop_test_phased` in [`src/cpu.s`](src/cpu.s).
 
+**Press ACTION to wake the device.** LEFT, RIGHT, UP, and DOWN do not wake it, also with their interrupts enabled. See "CLK control" in [docs/hardware-notes.md](../docs/hardware-notes.md).
+
 **What appears.** If the clock really stops, the bar is the last thing that this screen draws, and it stays on the screen until a button press. If the store does nothing, the result screen replaces the bar too fast to see.
 
 **Four rows of results**, from the top to the bottom:
@@ -256,7 +258,7 @@ Each other screen here reports a number that it measured at startup. This screen
 | 3 | RTC seconds (BCD), one byte each, from the left: before the store, at the first Timer1 interrupt after the store, at the second Timer1 interrupt after the store, and after the wake. `FF` means that no such interrupt occurred. |
 | 4 | the Timer1 count just before the store (the high 4 digits), and just after the wake (the low 4 digits). If Timer1 stops with the CPU, the two values are almost the same. |
 
-**How to read them together.** Wait several seconds before a button press wakes the device. Thus the top row is unambiguous:
+**How to read them together.** Wait several seconds before a press of ACTION wakes the device. Thus the top row is unambiguous:
 
 | row 1 (seconds) | row 2 (timer IRQs, both halves) | conclusion |
 |---|---|---|
@@ -270,6 +272,8 @@ If the screen changes **with no button press**, then a source that is not a butt
 **The value that `0x0B000004` reads back is not a stop status.** This screen keeps that value in `WRAM_STOP_READBACK`, and it does not show it. Real hardware returned `0x17`, which is the `CLK_MODE` value that this app sets, with the steady bit (`0x10`) ORed in. Thus both words of this register read back as `CLK_MODE`, and `+0x4` does not read back the value that software wrote to it. `clk_read8` in `core/src/clk.c` now models that behavior. One consequence: this screen cannot show whether the stop bit clears itself, because there is no readable stop status. The run does show that the CPU started again and continued. Thus the stop does not persist across a wake.
 
 **A second unit counted 1 or 2 Timer1 interrupts across the store**, on each of five runs, with the earlier version of this screen. That version showed only the total. Timer1 expires approximately each 128ms. Thus that unit ran Timer1 for approximately 128ms to 256ms near the stop, and not for the full stop. Rows 2 to 4 show where that time is: before the store, at the stop, or at the wake. See [VERIFICATION.md](VERIFICATION.md).
+
+**This version on the first unit** gave one interrupt before the store and one after it, and row 4 gave the same Timer1 count before and after the stop (`0x037A`). Thus Timer1 does not advance during the stop, and neither interrupt is an expiry. The interrupt after the store arrives in the second of the wake. The screen now acknowledges the buttons and Timer1 before the unmask, thus a request that an earlier expiry latched does not count. See [VERIFICATION.md](VERIFICATION.md).
 
 **The control run in this emulator** used a stop of 14 seconds, through `tools/bench_probe.c`. It gave row 1 `0x0000000E`, row 2 `0x00000000`, row 3 `0x18FFFF32`, and row 4 `0x03DB03DA`: no interrupt, and Timer1 stopped. The seconds row compares directly against hardware, because the emulated RTC keeps true 1Hz time. Thus that row must agree with the wall-clock time of the wait, on either side.
 

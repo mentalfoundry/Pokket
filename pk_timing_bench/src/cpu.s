@@ -1659,8 +1659,13 @@ stop_test_phased:
     mov r0, #STOP_TIMER_CTRL
     str r0, [r4, #8]
 
-    ldr r0, =INTC_ENABLE                @ unmask the buttons and Timer1
+    @ Acknowledge the buttons and Timer1 before the unmask. A Timer1 request that an earlier
+    @ expiry latched causes an interrupt at the unmask, and that interrupt is not part of this test.
+    ldr r0, =INTC_BASE
     ldr r1, =(INT_BUTTON_BITS | INT_TIMER1_BIT)
+    str r1, [r0, #0x10]
+
+    ldr r0, =INTC_ENABLE                @ unmask the buttons and Timer1
     str r1, [r0]
 
     @ A bar across the middle of the screen. It stays on the LCD while the CPU is stopped.

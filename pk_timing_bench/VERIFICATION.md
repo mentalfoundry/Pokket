@@ -67,7 +67,7 @@ The period is 1017, and not 1016, because a timer that is armed with P runs P+1 
 
 ## Screen 13: does bit 0 of CLK control stop the CPU?
 
-This screen is interactive. A person presses DOWN to run it, and then waits before a button press wakes the device. Thus `bench_probe` cannot run it. The emulator row below comes from an interactive control run.
+This screen is interactive. A person presses DOWN to run it, and then waits before a press of ACTION wakes the device. Only ACTION wakes it. The emulator row below comes from an interactive control run.
 
 | Source | Seconds stopped | Timer1 IRQs | `CLK control` readback | Date |
 |---|---|---|---|---|
@@ -77,6 +77,15 @@ This screen is interactive. A person presses DOWN to run it, and then waits befo
 The seconds row compares directly, because the emulated RTC keeps true 1Hz time. Thus that row must agree with the wall-clock time of the wait, on either side.
 
 **The readback row of the emulator needs a new run.** The recorded run gave `0x00000000`, and that value came from the model that returned the stored control word. `clk_read8` in `core/src/clk.c` now models the measured hardware behavior: both words read back as `CLK_MODE` with the steady bit (`0x10`) ORed in. This app sets `CLK_MODE 7`, thus the modeled readback is now `0x17`. No interactive run has confirmed that value since the correction.
+
+**The screen with a count for each phase.** This version shows four rows (see "Screen 13" in [README.md](README.md)). `tools/bench_probe.c` runs it in this emulator, with a press of ACTION.
+
+| Source | Row 1 (seconds) | Row 2 (IRQs before / after) | Row 3 (RTC seconds) | Row 4 (Timer1 before / after) | Date |
+|---|---|---|---|---|---|
+| Real hardware, a stop of 12 seconds | `0x0000000C` | `0x00010001` | `0x2335FF35` | `0x037A037A` | 2026-10-16 |
+| This emulator, a stop of 13 seconds | `0x0000000D` | `0x00000000` | `0x19FFFF32` | `0x03DB03DA` | 2026-10-16 |
+
+Row 4 shows that Timer1 does not advance during the stop on real hardware. Before the store, Timer1 counted approximately 109 of its 1000 ticks, thus neither interrupt of row 2 is an expiry. The interrupt after the store arrives in the second of the wake. In that run, the screen did not acknowledge Timer1 before the unmask, thus the interrupt before the store can be a request that an earlier expiry latched. The screen now acknowledges the buttons and Timer1 before the unmask. A second unit counted 1 or 2 interrupts in total, on each of five runs of the earlier version, which showed only the total.
 
 ## Screen 14: the two interrupt-line rates of the RTC
 
