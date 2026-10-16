@@ -71,8 +71,11 @@ void timer_write8(psemu_timer_t *timer, uint32_t offset, uint8_t value) {
         reg = &timer->timers[index].period;
         break;
     case 1:
-        reg = &timer->timers[index].count;
-        break;
+        /* COUNT ignores writes. On real hardware, a write of 0ABC to COUNT of a stopped timer and of
+           a running timer leaves COUNT and PERIOD at their old values (screen 29 of pk_timing_bench,
+           probe 22). Thus a write of PERIOD and COUNT in an interrupt handler does not start the
+           period again: the timer continues from its reload at the expiry. */
+        return;
     case 2: {
         uint32_t was_enabled = timer->timers[index].control & TIMER_CTRL_ENABLE;
         reg = &timer->timers[index].control;

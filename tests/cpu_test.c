@@ -1097,9 +1097,7 @@ static void test_timer_registers_are_16_bit(void) {
        from 851 ticks to approximately 52.6 million. Thus the audio interrupt
        never occurred, and the app made no sound. */
     psemu_bus_write32(&ps->bus, PSEMU_TIMER_BASE + 0x20, 0x03240353u); /* Timer2 period */
-    psemu_bus_write32(&ps->bus, PSEMU_TIMER_BASE + 0x24, 0x0323B1FDu); /* Timer2 count */
     assert(ps->timer.timers[2].period == 0x0353u);
-    assert(ps->timer.timers[2].count == 0xB1FDu);
     assert(psemu_bus_read32(&ps->bus, PSEMU_TIMER_BASE + 0x20) == 0x0353u);
 
     /* Enabling reloads count from the masked period, so a timer armed this way expires on
@@ -1118,6 +1116,26 @@ static void test_timer_registers_are_16_bit(void) {
 
     psemu_destroy(ps);
     printf("test_timer_registers_are_16_bit OK\n");
+}
+
+static void test_timer_count_ignores_writes(void) {
+    /* COUNT ignores writes, for a stopped timer and for a running timer. PERIOD does not change
+       (screen 29 of pk_timing_bench, probe 22). */
+    psemu_t *ps = make_arm_cpu();
+    psemu_bus_write32(&ps->bus, PSEMU_TIMER_BASE + 0x20, 0x0555u);            /* Timer2 period */
+    psemu_bus_write32(&ps->bus, PSEMU_TIMER_BASE + 0x28, TIMER_CTRL_ENABLE | 2u); /* /512, enable */
+    psemu_bus_write32(&ps->bus, PSEMU_TIMER_BASE + 0x28, 0u);                 /* stop */
+    psemu_bus_write32(&ps->bus, PSEMU_TIMER_BASE + 0x24, 0x0ABCu);            /* count */
+    assert(psemu_bus_read32(&ps->bus, PSEMU_TIMER_BASE + 0x24) == 0x0555u);
+
+    psemu_bus_write32(&ps->bus, PSEMU_TIMER_BASE + 0x20, 0x7FFFu);
+    psemu_bus_write32(&ps->bus, PSEMU_TIMER_BASE + 0x28, TIMER_CTRL_ENABLE | 2u);
+    psemu_bus_write32(&ps->bus, PSEMU_TIMER_BASE + 0x24, 0x0ABCu);
+    assert(psemu_bus_read32(&ps->bus, PSEMU_TIMER_BASE + 0x24) == 0x7FFFu);
+    assert(psemu_bus_read32(&ps->bus, PSEMU_TIMER_BASE + 0x20) == 0x7FFFu);
+
+    psemu_destroy(ps);
+    printf("test_timer_count_ignores_writes OK\n");
 }
 
 static void test_boot_ready_stub(void) {
@@ -3368,6 +3386,7 @@ int main(void) {
     test_fiq_takes_priority_over_irq();
     test_timer_clock_divisor();
     test_timer_registers_are_16_bit();
+    test_timer_count_ignores_writes();
     test_boot_ready_stub();
     test_clk_mode_scales_run_speed();
     test_run_returns_the_reference_time_that_ran();
