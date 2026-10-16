@@ -76,7 +76,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "usage: %s <bios.bin> <app.mcs> [frames] [pages] [probe]\n", argv[0]);
         fprintf(stderr, "  pages: screen number to page to after launch (0 = leave wherever it lands)\n");
         fprintf(stderr, "  probe: with pages = 29, the probe to select and run with Down\n");
-        fprintf(stderr, "         with pages = 13, the mode of screen 13 (0 to 6), which Down runs. ACTION wakes the CPU\n");
+        fprintf(stderr, "         with pages = 13, the mode of screen 13 (0 to 8), which Down runs. ACTION wakes the CPU\n");
         return 1;
     }
     bios = read_file(argv[1], &bios_size);
@@ -196,8 +196,9 @@ int main(int argc, char **argv) {
                     psemu_bus_read32(&ps->bus, base), psemu_bus_read32(&ps->bus, base + 4u),
                     psemu_bus_read32(&ps->bus, base + 8u), psemu_bus_read32(&ps->bus, base + 12u));
             }
-            for (k = 5; k <= 6; k++) {
-                uint32_t base = k == 5 ? 0x670u : 0x270u;
+            for (k = 5; k <= 8; k++) {
+                static const uint32_t bases[4] = {0x670u, 0x270u, 0x700u, 0x710u};
+                uint32_t base = bases[k - 5];
                 printf("screen13 mode %d rows @0x%03X: 0x%08X 0x%08X 0x%08X 0x%08X\n", k, base,
                     psemu_bus_read32(&ps->bus, base), psemu_bus_read32(&ps->bus, base + 4u),
                     psemu_bus_read32(&ps->bus, base + 8u), psemu_bus_read32(&ps->bus, base + 12u));

@@ -120,6 +120,18 @@ On real hardware, the CPU executes the first instruction after the store before 
 
 With the `MOV`, the CPU executes two instructions after the store before it stops: the `MOV` and the first `LDR`. In mode 2, it executes one. Thus the stop does not occur after a fixed number of instructions. Two rules agree with both modes: a fixed number of cycles after the store, or the stop after the first data read after the store.
 
+**Mode 7, 16 `MOV`s after the store.** The same rows as mode 2, but the reads are in the 17th, 18th, and 19th instructions after the store. No real-hardware run yet.
+
+| Source | Row 1 (before) | Row 2 (17th after) | Row 3 (18th after) | Row 4 (19th after) | Date |
+|---|---|---|---|---|---|
+| This emulator | `0x000003DB` | `0x000003DB` | `0x000003DB` | `0x000003DA` | 2026-10-17 |
+
+**Mode 8, a mask with no acknowledge.** Row 1 is after the mask of each source and an acknowledge of the buttons, with DOWN down. Row 2 is the hold register in the callback, at the entry (high) and after the mask of DOWN (low). Row 3 is approximately 10 ms later. Row 4 is after the release of DOWN. No real-hardware run yet.
+
+| Source | Row 1 | Row 2 | Row 3 | Row 4 | Date |
+|---|---|---|---|---|---|
+| This emulator | `0x00800008` | `0xFFFFFFFF` | `0x00800008` | `0x02800200` | 2026-10-17 |
+
 **Mode 5, the hold bit of a held button.** Each row is the hold register (high) and the status register (low). Row 1 is at the start, with DOWN down. Row 2 is after the mask of each source and an acknowledge of DOWN. Row 3 is approximately 10 ms later. Row 4 is after the release of DOWN.
 
 | Source | Row 1 | Row 2 | Row 3 | Row 4 | Date |

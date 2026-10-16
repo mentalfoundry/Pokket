@@ -1658,6 +1658,8 @@ draw_stop_rows:
 @   4  stop_test_capture    Timer1 and each button unmasked, with a record of each interrupt
 @   5  stop_test_held       the hold bit of a held button, with each source masked
 @   6  stop_test_instr      the same as mode 2, with a MOV of 1 cycle after the store
+@   7  stop_test_instr      the same as mode 2, with 16 MOVs after the store
+@   8  stop_test_unmask     the hold bit of a held button after a mask with no acknowledge
 @ -> r1 = 1 if this function used a press, and 0 if not. Keeps r0 and r4 to r11.
     .global stop_buttons
 stop_buttons:
@@ -1702,6 +1704,8 @@ stop_modes:
     .word stop_test_capture     @ 4
     .word stop_test_held        @ 5
     .word stop_test_instr       @ 6
+    .word stop_test_instr       @ 7
+    .word stop_test_unmask      @ 8
 
 @ The masked mode of screen 13. It is the same as stop_test_phased, but Timer1 stays masked. Only
 @ ACTION is unmasked, for the wake, and its handler acknowledges only the buttons. Thus each Timer1
@@ -1720,6 +1724,8 @@ stop_rows:
     .word WRAM_STOP_M4
     .word WRAM_STOP_M5
     .word WRAM_STOP_M6
+    .word WRAM_STOP_M7
+    .word WRAM_STOP_M8
 
     .global stop_test_masked
 stop_test_masked:
@@ -1819,10 +1825,11 @@ stop_masked_handler:
     pop {r0, r1, pc}
     .ltorg
 
-@ Modes 2 and 6. r0 = the mode. Timer1 is masked, and only ACTION is unmasked, the same as the
+@ Modes 2, 6, and 7. r0 = the mode. Timer1 is masked, and only ACTION is unmasked, the same as the
 @ masked mode. Mode 2: the rows are the Timer1 count in the instruction before the store, and in
 @ each of the first three instructions after the store. Mode 6: the same, but a MOV of 1 cycle is
-@ the first instruction after the store, and the three reads follow it. While ACTION stays down
+@ the first instruction after the store, and the three reads follow it. Mode 7: the same, but with
+@ 16 MOVs before the three reads. While ACTION stays down
 @ after the wake, the CPU executes only the interrupt handler, and Timer1 counts. Thus each read
 @ after the stop gives a different count from a read before the stop, and the first such row gives
 @ the number of instructions that the CPU executes after the store before it stops.
@@ -1867,6 +1874,8 @@ stop_test_instr:
     mov r1, #1
     cmp r9, #6
     beq 3f
+    cmp r9, #7
+    beq 5f
     ldr r5, [r4, #4]                    @ the count before the store
     str r1, [r0]                        @ the store under test
     ldr r6, [r4, #4]                    @ the first instruction after the store
@@ -1879,10 +1888,23 @@ stop_test_instr:
     ldr r6, [r4, #4]                    @ the second
     ldr r7, [r4, #4]                    @ the third
     ldr r8, [r4, #4]                    @ the fourth
+    b 4f
+5:  ldr r5, [r4, #4]                    @ mode 7: the count before the store
+    str r1, [r0]                        @ the store under test
+    .rept 16
+    mov r0, r0                          @ instructions 1 to 16 after the store
+    .endr
+    ldr r6, [r4, #4]                    @ the 17th
+    ldr r7, [r4, #4]                    @ the 18th
+    ldr r8, [r4, #4]                    @ the 19th
 
 4:  cmp r9, #6
     ldreq r9, =WRAM_STOP_M6
+    beq 6f
+    cmp r9, #7
+    ldreq r9, =WRAM_STOP_M7
     ldrne r9, =WRAM_STOP_M2
+6:
     mov r0, #0xFF00
     orr r0, r0, #0xFF                   @ r0 = FFFF
     and r5, r5, r0
@@ -2064,6 +2086,84 @@ stop_test_held:
     str r0, [r5, #12]
     pop {r4, r5, r6, lr}
     bx lr
+
+@ Mode 8. It does not stop the CPU. The press of DOWN that starts it is still down at the start.
+@ Each row is the hold register (bits 16 to 31) and the status register (bits 0 to 15), except
+@ row 2. DOWN is bit 3 (8) of each register.
+@   Row 1: after the mask of each source and an acknowledge of the buttons.
+@   Row 2: in the IRQ callback, after the unmask of DOWN only: the hold register at the entry
+@          (bits 16 to 31), and the hold register after the mask of DOWN with no acknowledge
+@          (bits 0 to 15). FFFFFFFF if no interrupt occurs in approximately 10 ms.
+@   Row 3: approximately 10 ms after the callback, with no acknowledge.
+@   Row 4: after the release of DOWN, then approximately 10 ms, with no acknowledge.
+@ If the hold bit of a held button is its live level AND its enable bit, the mask clears it, and
+@ row 2 (bits 0 to 15) and row 3 do not show 0008 in the hold half. If it is a latch, they do.
+@ Each source stays masked at the end, the same as after the other modes.
+stop_test_unmask:
+    push {r4, r5, r6, lr}
+    ldr r4, =INTC_BASE
+    ldr r5, =WRAM_STOP_M8
+    mvn r0, #0
+    str r0, [r5, #4]                    @ row 2: no interrupt yet
+
+    ldr r0, =stop_unmask_handler
+    adr lr, 1f
+    ldr r1, =register_irq_handler
+    bx r1
+1:  mvn r1, #0                          @ mask each source
+    str r1, [r4, #0xC]
+    mov r1, #INT_BUTTON_BITS            @ acknowledge the buttons
+    str r1, [r4, #0x10]
+    bl held_sample
+    str r0, [r5]
+
+    mov r1, #8                          @ unmask DOWN only
+    str r1, [r4, #8]
+    ldr r6, =10000                      @ wait for the callback, approximately 10 ms at most
+2:  ldr r0, [r5, #4]
+    cmn r0, #1
+    bne 3f
+    subs r6, r6, #1
+    bne 2b
+3:  mov r1, #8                          @ mask DOWN, also if no interrupt occurred
+    str r1, [r4, #0xC]
+
+    bl held_delay
+    bl held_sample
+    str r0, [r5, #8]
+
+4:  ldr r0, [r4, #4]                    @ wait for the release of DOWN
+    tst r0, #8
+    bne 4b
+    bl held_delay
+    bl held_sample
+    str r0, [r5, #12]
+
+    mvn r1, #0                          @ acknowledge each source
+    str r1, [r4, #0x10]
+    mov r0, #0                          @ remove the handler
+    adr lr, 5f
+    ldr r1, =register_irq_handler
+    bx r1
+5:  pop {r4, r5, r6, lr}
+    bx lr
+    .ltorg
+
+@ The IRQ callback of mode 8. It masks DOWN, and it does not acknowledge it.
+stop_unmask_handler:
+    push {r0, r1, r2, lr}
+    ldr r0, =INTC_BASE
+    ldr r1, [r0]                        @ the hold register at the entry
+    mov r2, #8
+    str r2, [r0, #0xC]                  @ mask DOWN
+    ldr r2, [r0]                        @ the hold register after the mask
+    mov r1, r1, lsl #16
+    mov r2, r2, lsl #16
+    orr r1, r1, r2, lsr #16
+    ldr r0, =WRAM_STOP_M8
+    str r1, [r0, #4]
+    pop {r0, r1, r2, pc}
+    .ltorg
 
 @ r4 = INTC_BASE -> r0 = the hold register (bits 16 to 31) and the status register (bits 0 to 15).
 @ Uses r1.
