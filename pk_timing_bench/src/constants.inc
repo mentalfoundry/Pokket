@@ -356,7 +356,13 @@
 .equ WRAM_PROBE_T1,          0x640
 @ 8 words: the WRAM copy of the probe target. See probe_pad in cpu.s.
 .equ WRAM_PROBE_PAD,         0x650
-.equ PROBE_COUNT,            35
+.equ PROBE_COUNT,            44
+@ The flash control registers: +0 (the command and status), +4, +8 (F_BANK_FLG), +0xC (F_WAIT1),
+@ +0x10 (F_WAIT2), and +0x100 (F_BANK_VAL, 16 words). See probes 23 to 2B in cpu.s.
+.equ FLASH_CTRL_BASE,        0x06000000
+@ The iterations of each timed loop of probes 25 to 2B.
+.equ WAIT_READS,             500
+.equ WAIT_FETCHES,           400
 @ 4 words: the four rows of mode 5 of screen 13. See stop_test_held in cpu.s.
 .equ WRAM_STOP_M5,           0x670
 @ The watchdog: Timer1 at /32 with this period expires after (period + 1) * 32 cycles, which is

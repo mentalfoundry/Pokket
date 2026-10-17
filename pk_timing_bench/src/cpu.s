@@ -749,6 +749,17 @@ und_thumb_insn:
 @  20  in Supervisor mode: the mode bits that the SPSR keeps. See probe_priv_20.
 @  21  in Supervisor mode: a write of the 26-bit mode 03 to the CPSR. See probe_priv_21.
 @  22  writes to the COUNT register of Timer2. See probe_count_write.
+@  23  the flash control registers, with no write: +0, +4, and F_BANK_FLG. See probe_flash_regs_a.
+@  24  F_WAIT1, F_WAIT2, and F_BANK_VAL entries 0 to 7, one hex digit each, from the left. See
+@      probe_flash_regs_b.
+@  25  the timing baseline: rows 2 to 4 are the Timer0 ticks at /2 of WAIT_READS reads of WRAM,
+@      of WAIT_FETCHES loops of four MOVs in FLASH1, and of WAIT_READS reads of F_BANK_VAL.
+@  26  the same, with F_WAIT2 = 0x20.         27  the same, with F_WAIT2 = 0x01.
+@  28  the WRAM loop with F_WAIT2 = 0x02, 0x04, and 0x08, one row each.
+@  29  the WRAM loop with F_WAIT2 = 0x10, 0x40, and 0x80, one row each.
+@  2A  the same as 25, with F_WAIT1 = 0x10.   2B  the same as 25, with F_WAIT1 = 7.
+@      Each probe from 26 to 2B writes 0 to the register after its loops. The kernel gives 0 to
+@      both registers before it starts the app.
 @ In probes 0 and 6 to D, the word at the target is MOV r1,PC, and each other word of probe_pad is
 @ BX r3. r3 holds the address of probe_pc_back. If the probe returns, row 2 is r1 minus the aligned
 @ target: 8 if R15 was aligned, A if not, and 0 if MOV r1,PC did not execute.
@@ -2689,3 +2700,191 @@ probe_table:
     .word probe_priv_20         @ 20
     .word probe_priv_21         @ 21
     .word probe_count_write     @ 22
+    .word probe_flash_regs_a    @ 23
+    .word probe_flash_regs_b    @ 24
+    .word probe_wait_base       @ 25
+    .word probe_wait2_20        @ 26
+    .word probe_wait2_01        @ 27
+    .word probe_wait2_low       @ 28
+    .word probe_wait2_high      @ 29
+    .word probe_wait1_10        @ 2A
+    .word probe_wait1_07        @ 2B
+
+@ Probe 23. Reads the flash control registers, and writes nothing.
+probe_flash_regs_a:
+    ldr r4, =FLASH_CTRL_BASE
+    ldr r1, [r4]
+    ldr r2, [r4, #4]
+    ldr r3, [r4, #8]
+    mov r0, #1
+    b probe_finish
+
+@ Probe 24. Row 4 holds bits 0 to 3 of F_BANK_VAL entries 0 to 7, entry 0 in bits 28 to 31.
+probe_flash_regs_b:
+    ldr r4, =FLASH_CTRL_BASE
+    ldr r1, [r4, #0xC]
+    ldr r2, [r4, #0x10]
+    add r5, r4, #0x100
+    mov r3, #0
+    mov r6, #8
+1:  ldr r0, [r5], #4
+    and r0, r0, #0xF
+    orr r3, r0, r3, lsl #4
+    subs r6, r6, #1
+    bne 1b
+    mov r0, #1
+    b probe_finish
+    .ltorg
+
+@ Keeps the period and the control of Timer0 in r10 and r11, then runs Timer0 at /2 from 0xFFFF.
+@ Uses r0 and r1.
+wait_timer_start:
+    ldr r0, =TIMER0_BASE
+    ldr r10, [r0]
+    ldr r11, [r0, #8]
+    mov r1, #0
+    str r1, [r0, #8]
+    ldr r1, =0xFFFF
+    str r1, [r0]
+    mov r1, #TIMER0_CTRL_DIV2
+    str r1, [r0, #8]
+    bx lr
+
+@ Writes back the Timer0 that wait_timer_start kept. Uses r0 and r12.
+wait_timer_stop:
+    ldr r12, =TIMER0_BASE
+    mov r0, #0
+    str r0, [r12, #8]
+    str r10, [r12]
+    str r11, [r12, #8]
+    bx lr
+
+@ r0 = an address -> r0 = the Timer0 ticks of WAIT_READS reads of that address. Uses r1 to r3 and
+@ r12. Each iteration is an LDR, a SUBS, and a BNE, in FLASH1.
+wait_read_loop:
+    push {r4, lr}
+    ldr r12, =TIMER0_BASE
+    ldr r2, =WAIT_READS
+    ldr r4, [r12, #4]
+1:  ldr r3, [r0]
+    subs r2, r2, #1
+    bne 1b
+    ldr r1, [r12, #4]
+    sub r0, r4, r1                      @ Timer0 counts down
+    mov r0, r0, lsl #16
+    mov r0, r0, lsr #16
+    pop {r4, pc}
+
+@ -> r0 = the Timer0 ticks of WAIT_FETCHES loops of four MOVs, a SUBS, and a BNE, in FLASH1. Uses r1
+@ to r3 and r12.
+wait_fetch_loop:
+    push {r4, lr}
+    ldr r12, =TIMER0_BASE
+    ldr r2, =WAIT_FETCHES
+    ldr r4, [r12, #4]
+1:  mov r3, r3
+    mov r3, r3
+    mov r3, r3
+    mov r3, r3
+    subs r2, r2, #1
+    bne 1b
+    ldr r1, [r12, #4]
+    sub r0, r4, r1
+    mov r0, r0, lsl #16
+    mov r0, r0, lsr #16
+    pop {r4, pc}
+    .ltorg
+
+@ -> r1 = the WRAM loop, r2 = the FLASH1 loop, r3 = the F_BANK_VAL loop.
+wait_three_loops:
+    push {r4, r5, lr}
+    ldr r0, =WRAM_CPU_DATA
+    bl wait_read_loop
+    mov r4, r0
+    bl wait_fetch_loop
+    mov r5, r0
+    ldr r0, =FLASH_CTRL_BASE + 0x100
+    bl wait_read_loop
+    mov r3, r0
+    mov r1, r4
+    mov r2, r5
+    pop {r4, r5, pc}
+    .ltorg
+
+@ Probe 25. The three loops with the registers as the kernel left them.
+probe_wait_base:
+    bl wait_timer_start
+    bl wait_three_loops
+    bl wait_timer_stop
+    mov r0, #1
+    b probe_finish
+
+@ r4 = the address of the register, r5 = the value. The three loops with that value, then 0 in the
+@ register.
+probe_wait_three:
+    bl wait_timer_start
+    str r5, [r4]
+    bl wait_three_loops
+    mov r0, #0
+    str r0, [r4]
+    bl wait_timer_stop
+    mov r0, #1
+    b probe_finish
+
+@ Probes 26, 27, 2A, and 2B.
+probe_wait2_20:
+    ldr r4, =FLASH_CTRL_BASE + 0x10
+    mov r5, #0x20
+    b probe_wait_three
+probe_wait2_01:
+    ldr r4, =FLASH_CTRL_BASE + 0x10
+    mov r5, #0x01
+    b probe_wait_three
+probe_wait1_10:
+    ldr r4, =FLASH_CTRL_BASE + 0xC
+    mov r5, #0x10
+    b probe_wait_three
+probe_wait1_07:
+    ldr r4, =FLASH_CTRL_BASE + 0xC
+    mov r5, #7
+    b probe_wait_three
+
+@ r5 = three values of F_WAIT2, in bits 0 to 7, 8 to 15, and 16 to 23. Rows 2 to 4 are the WRAM
+@ loop with each value. Then F_WAIT2 is 0.
+probe_wait2_bits:
+    ldr r4, =FLASH_CTRL_BASE + 0x10
+    bl wait_timer_start
+    and r6, r5, #0xFF
+    str r6, [r4]
+    ldr r0, =WRAM_CPU_DATA
+    bl wait_read_loop
+    mov r7, r0
+    mov r6, r5, lsr #8
+    and r6, r6, #0xFF
+    str r6, [r4]
+    ldr r0, =WRAM_CPU_DATA
+    bl wait_read_loop
+    mov r8, r0
+    mov r6, r5, lsr #16
+    and r6, r6, #0xFF
+    str r6, [r4]
+    ldr r0, =WRAM_CPU_DATA
+    bl wait_read_loop
+    mov r9, r0
+    mov r0, #0
+    str r0, [r4]
+    bl wait_timer_stop
+    mov r1, r7
+    mov r2, r8
+    mov r3, r9
+    mov r0, #1
+    b probe_finish
+
+@ Probes 28 and 29.
+probe_wait2_low:
+    ldr r5, =0x00080402
+    b probe_wait2_bits
+probe_wait2_high:
+    ldr r5, =0x00804010
+    b probe_wait2_bits
+    .ltorg

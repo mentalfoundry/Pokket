@@ -383,6 +383,20 @@ Probes 6 to 9, E, and 11 give values that depend on the addresses of the code in
 | 21 (Supervisor mode: mode 03 written to the CPSR) | `21010000 60000093 60000093 60000093` | the same |
 | 22 (writes to COUNT of Timer2) | `22010000 00000555 00007FFF 00007FFF` | the same |
 
+Probes 23 to 2B, with no real-hardware run yet. This emulator gives these values. In this emulator, a read of `FLASH_CTRL+4` and of `F_WAIT1` gives the last value that software wrote to `FLASH_CTRL+0`, and a read of `F_WAIT2` gives 4. This emulator does not change the timing for a value of `F_WAIT1` or `F_WAIT2`.
+
+| probe | this emulator |
+|---|---|
+| 23 (flash control registers) | `23010000 00000003 00000002 0000000E` |
+| 24 (`F_WAIT1`, `F_WAIT2`, `F_BANK_VAL`) | `24010000 00000002 00000004 F012FFFF` |
+| 25 (timing baseline) | `25010000 00000BB9 00000C80 00000BB8` |
+| 26 (`F_WAIT2 = 0x20`) | `26010000 00000BB8 00000C81 00000BB9` |
+| 27 (`F_WAIT2 = 0x01`) | `27010000 00000BB8 00000C81 00000BB9` |
+| 28 (`F_WAIT2` = `02`, `04`, `08`) | `28010000 00000BB9 00000BB9 00000BB9` |
+| 29 (`F_WAIT2` = `10`, `40`, `80`) | `29010000 00000BB9 00000BB9 00000BB9` |
+| 2A (`F_WAIT1 = 0x10`) | `2A010000 00000BB8 00000C81 00000BB9` |
+| 2B (`F_WAIT1 = 7`) | `2B010000 00000BB8 00000C81 00000BB9` |
+
 The same unit, with a build of three blocks, on 2026-10-16. In that build, `0x02004000` is a target in the third block: `MOV r1,PC`, and then `BX r3`.
 
 | probe | real hardware, three blocks | this emulator, three blocks |

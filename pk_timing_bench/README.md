@@ -568,6 +568,15 @@ This screen runs nothing when it is drawn. **UP** selects the next probe, and **
 | 1F | `E12F0010`, `E12F1010`, and `E12FE110`, with a value in Rm that an `MSR` writes to the flags. See `probe_msr_bit4` in `src/cpu.s` | rows 2 to 4: the CPSR after each word |
 | 21 | in Supervisor mode: a write of mode 03, the 26-bit Supervisor mode, to the CPSR. See `probe_priv_21` in `src/cpu.s` | rows 2 to 4: the CPSR before the write, immediately after it, and after the old value is back |
 | 22 | writes to COUNT of Timer2. See `probe_count_write` in `src/cpu.s` | row 2: COUNT of a stopped timer after a write of `0ABC`, from `0555`. Row 3: COUNT of a running timer immediately after a write of `0ABC`, from `7FFF`. Row 4: PERIOD after that write. A COUNT that ignores writes gives approximately `0555` and `7FFF` |
+| 23 | the flash control registers, with no write. See `probe_flash_regs_a` in `src/cpu.s` | rows 2 to 4: `FLASH_CTRL+0`, `+4`, and `F_BANK_FLG`. The kernel gives `F_BANK_FLG` one bit for each block of the app |
+| 24 | more flash control registers, with no write. See `probe_flash_regs_b` | rows 2 and 3: `F_WAIT1` and `F_WAIT2`. Row 4: bits 0 to 3 of `F_BANK_VAL` entries 0 to 7, one hex digit each, entry 0 at the left. The kernel gives slot 0, 1, and 2 to the blocks of the app, and `F` to each other block |
+| 25 | the timing baseline. Timer0 runs at /2, which is 2 CPU cycles for each tick. See `probe_wait_base` | rows 2 to 4: the ticks of 500 reads of WRAM, of 400 loops of four `MOV`s in FLASH1, and of 500 reads of `F_BANK_VAL`. Each read loop is 12 cycles for each read, with a 1-cycle read |
+| 26 | the same, with `F_WAIT2 = 0x20`. The probe then writes 0 | the same rows. If bit 5 makes WRAM reads 2 cycles, row 2 is approximately `CB2` in place of approximately `BB8` |
+| 27 | the same, with `F_WAIT2 = 0x01` | the same rows |
+| 28 | the WRAM loop with `F_WAIT2 = 0x02`, `0x04`, and `0x08` | one row for each value |
+| 29 | the WRAM loop with `F_WAIT2 = 0x10`, `0x40`, and `0x80` | one row for each value |
+| 2A | the same as 25, with `F_WAIT1 = 0x10`. The kernel writes `0x10` for the fast clock modes | the same rows as 25 |
+| 2B | the same as 25, with `F_WAIT1 = 7`. The kernel writes `7` one time at boot | the same rows as 25 |
 
 The word at the target is `MOV r1,PC`, and each other word near the target is `BX r3`, which returns to the app. Probes 3 to 5 show how each memory region answers a word read at an address 2 above a word boundary. A difference between FLASH1 and WRAM in probes 6 to D then points to the memory, and not to the CPU.
 
