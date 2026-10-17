@@ -718,6 +718,7 @@ static void run_until(psemu_t *ps, uint64_t end, int stop_at_ack) {
         uint32_t pc = ps->cpu.r[15];
         uint32_t cpsr = ps->cpu.cpsr;
         uint32_t step_cycles;
+        uint32_t stop_delay;
         uint32_t real_time_cycles = 0;
         uint64_t dt;
         if (stop_at_ack && (com_transfer_acked(&ps->com) || psemu_cpu_faulted(ps))) {
@@ -739,7 +740,7 @@ static void run_until(psemu_t *ps, uint64_t end, int stop_at_ack) {
            enters clock stop between frames and waits for INT_RTC. No test on real hardware confirms
            the RTC wake. The wake operation clears the CLK_STOP bit. One fact is unconfirmed: whether
            real hardware clears the CLK_STOP bit automatically, or whether the kernel clears it. */
-        if (clk_stop_requested(&ps->clk)) {
+        if (clk_stopped(&ps->clk)) {
             static const uint32_t WAKE_SOURCES = INT_BTN_ACTION | INT_RTC;
             if (ps->intc.hold & ps->intc.enable & WAKE_SOURCES) {
                 clk_clear_stop(&ps->clk);
@@ -763,7 +764,14 @@ static void run_until(psemu_t *ps, uint64_t end, int stop_at_ack) {
                 continue;
             }
         }
+        /* A store that requests the stop starts CLK_STOP_DELAY_CYCLES (clk.h). The instructions
+           after it count their cycles against that time, and the stop occurs after it. A store in
+           this step starts that time again, thus this step does not count against it. */
+        stop_delay = ps->clk.stop_delay;
         step_cycles = arm7tdmi_step(&ps->cpu);
+        if (stop_delay != 0u && ps->clk.stop_delay == stop_delay) {
+            clk_count_stop_delay(&ps->clk, step_cycles);
+        }
         if (ps->clk.mode != per_cycle_mode) {
             per_cycle_mode = ps->clk.mode;
             per_cycle = PSEMU_TIME_HZ / clk_current_hz(&ps->clk);
@@ -1004,7 +1012,7 @@ int psemu_cpu_faulted(const psemu_t *ps) {
 }
 
 int psemu_clk_stopped(const psemu_t *ps) {
-    return clk_stop_requested(&ps->clk);
+    return clk_stopped(&ps->clk);
 }
 
 void psemu_write_crash_report(const psemu_t *ps, FILE *f) {

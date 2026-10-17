@@ -8,6 +8,13 @@
 
 #define CLK_REG_SPAN 0x8u
 
+/* The time from a store that sets bit 0 of `control` to the stop, in CPU cycles. After that store,
+   the CPU starts the next instruction only while fewer than this number of cycles have passed. Thus
+   the first instruction after the store always executes. Screen 13 of pk_timing_bench gives this
+   value on real hardware, with the cycle costs of this emulator (see docs/hardware-notes.md, "CLK
+   control"). A change to those cycle costs needs a new check of this value against the bench. */
+#define CLK_STOP_DELAY_CYCLES 3u
+
 /* CPU and timer clock speed control.
    Confirmed against real hardware behavior.
 
@@ -24,6 +31,8 @@ typedef struct clk {
     uint32_t control;
     uint32_t mode_write_scratch;
     uint32_t control_write_scratch;
+    /* The cycles that remain before a requested stop occurs. 0 when no stop is in progress. */
+    uint32_t stop_delay;
 } clk_t;
 
 void clk_init(clk_t *clk);
@@ -45,9 +54,9 @@ uint32_t clk_current_hz(const clk_t *clk);
    comes on again at the next button press. This emulator must stop the CPU at some point for this
    behavior to occur.
 
-   THE APPLICABLE REGISTER IS INFERRED. It is not confirmed. This register has no documentation, and
-   this project has no method to probe it directly. The app writes 1 here as the last step of a
-   clear power-down sequence, in this order:
+   THE APPLICABLE REGISTER IS CONFIRMED. Screen 13 of pk_timing_bench writes 1 here with no other
+   part of the power-down sequence, and the CPU stops until ACTION wakes it. A real app writes 1 here
+   as the last step of a clear power-down sequence, in this order:
 
      IOP_STOP      = 0x62          sound and other IOP subsystems off
      INTC mask     = 0x200         RTC interrupt disabled
@@ -65,6 +74,11 @@ uint32_t clk_current_hz(const clk_t *clk);
    the CPU then executes data. See docs/hardware-notes.md, "CLK control (0x0B000004):
    stop/standby". */
 int clk_stop_requested(const clk_t *clk);
+/* 1 if a stop is requested and its CLK_STOP_DELAY_CYCLES have passed. psemu_run executes nothing
+   while this is 1. */
+int clk_stopped(const clk_t *clk);
+/* Counts the cycles of one instruction against a stop in progress. */
+void clk_count_stop_delay(clk_t *clk, uint32_t cycles);
 void clk_clear_stop(clk_t *clk);
 
 #endif

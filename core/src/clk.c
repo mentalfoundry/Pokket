@@ -32,6 +32,7 @@ void clk_init(clk_t *clk) {
     clk->control = 0;
     clk->mode_write_scratch = 0;
     clk->control_write_scratch = 0;
+    clk->stop_delay = 0;
 }
 
 uint8_t clk_read8(clk_t *clk, uint32_t offset) {
@@ -67,6 +68,9 @@ void clk_write8(clk_t *clk, uint32_t offset, uint8_t value) {
         clk->control_write_scratch = (clk->control_write_scratch & ~(0xFFu << shift)) | ((uint32_t)value << shift);
         if (shift == 24u) {
             clk->control = clk->control_write_scratch;
+            if (clk->control & 1u) {
+                clk->stop_delay = CLK_STOP_DELAY_CYCLES;
+            }
         }
     }
 }
@@ -79,6 +83,15 @@ int clk_stop_requested(const clk_t *clk) {
     return (clk->control & 1u) != 0;
 }
 
+int clk_stopped(const clk_t *clk) {
+    return clk_stop_requested(clk) && clk->stop_delay == 0u;
+}
+
+void clk_count_stop_delay(clk_t *clk, uint32_t cycles) {
+    clk->stop_delay = cycles >= clk->stop_delay ? 0u : clk->stop_delay - cycles;
+}
+
 void clk_clear_stop(clk_t *clk) {
     clk->control &= ~1u;
+    clk->stop_delay = 0;
 }

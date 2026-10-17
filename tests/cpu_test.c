@@ -2858,6 +2858,75 @@ static void test_rtc_keeps_real_time(void) {
     printf("test_rtc_keeps_real_time OK\n");
 }
 
+static psemu_t *make_cpu_with_one_block_app(void);
+
+/* Runs `code` after a store of 1 to CLK control, in FLASH1 or in WRAM, and gives the address where
+   the CPU stops. r4 points at the Timer0 period, thus each LDR r6,[r4] is an I/O read of 2 cycles,
+   the same as the reads of Timer1 on screen 13. *loaded is 1 if an LDR executed before the stop. */
+static uint32_t run_to_clk_stop(int in_flash, const uint32_t *code, int n, int *loaded) {
+    psemu_t *ps = make_cpu_with_one_block_app();
+    uint32_t base = in_flash ? PSEMU_FLASH1_BASE + 0x100u : 0x100u;
+    uint32_t stop;
+    int k;
+    ps->has_bios = 1;
+    for (k = 0; k <= n; k++) {
+        uint32_t word = k == 0 ? 0xE5801000u /* STR r1,[r0] */ : code[k - 1];
+        if (in_flash) {
+            psemu_bus_write32(&ps->bus, PSEMU_FLASH2_BASE + 0x2100u + 4u * (uint32_t)k, word);
+        } else {
+            put32(ps, 0x100u + 4u * (uint32_t)k, word);
+        }
+    }
+    if (in_flash) { /* B . after the code */
+        psemu_bus_write32(&ps->bus, PSEMU_FLASH2_BASE + 0x2100u + 4u * (uint32_t)(n + 1), 0xEAFFFFFEu);
+    } else {
+        put32(ps, 0x100u + 4u * (uint32_t)(n + 1), 0xEAFFFFFEu);
+    }
+    psemu_bus_write32(&ps->bus, PSEMU_TIMER_BASE + 0x0, 0x1234u);
+    psemu_bus_write32(&ps->bus, PSEMU_CLK_BASE + 0x0, 7u); /* CLK_MODE 7, the same as the bench */
+    ps->cpu.r[0] = PSEMU_CLK_BASE + 0x4u;
+    ps->cpu.r[1] = 1u;
+    ps->cpu.r[4] = PSEMU_TIMER_BASE;
+    ps->cpu.r[6] = 0u;
+    ps->cpu.r[15] = base;
+    psemu_run(ps, 1000u);
+    assert(psemu_clk_stopped(ps));
+    stop = ps->cpu.r[15] - base;
+    *loaded = ps->cpu.r[6] == 0x1234u;
+    psemu_destroy(ps);
+    return stop;
+}
+
+static void test_clk_stop_occurs_3_cycles_after_the_store(void) {
+    /* After a store that sets bit 0 of CLK control, the CPU starts the next instruction only while
+       fewer than 3 cycles have passed. Each sequence below is a sequence of screen 13 of
+       pk_timing_bench, and each result is the result on real hardware: an LDR that executes before
+       the stop reads the count before the stop. The costs are the costs of this emulator: in FLASH,
+       2 cycles for a MOV, 3 for a MOV with a register-specified shift, and 5 for an LDR from I/O. In
+       WRAM, 1 cycle for a MOV. */
+    static const uint32_t ldr3[] = {0xE5946000u, 0xE5946000u, 0xE5946000u}; /* LDR r6,[r4] */
+    static const uint32_t mov_ldr[] = {0xE1A00000u, 0xE5946000u, 0xE5946000u};
+    static const uint32_t mov2_ldr[] = {0xE1A00000u, 0xE1A00000u, 0xE5946000u};
+    static const uint32_t mov3_ldr[] = {0xE1A00000u, 0xE1A00000u, 0xE1A00000u, 0xE5946000u};
+    static const uint32_t shift_ldr[] = {0xE1A07117u, 0xE5946000u}; /* MOV r7,r7,LSL r1 */
+    int loaded;
+
+    /* Mode 2: the first LDR executes, and the second does not. */
+    assert(run_to_clk_stop(1, ldr3, 3, &loaded) == 8u && loaded);
+    /* Modes 6 and 10, row 1: a MOV and an LDR execute. */
+    assert(run_to_clk_stop(1, mov_ldr, 3, &loaded) == 12u && loaded);
+    /* Mode 10, row 2: two MOVs execute, and the LDR does not. */
+    assert(run_to_clk_stop(1, mov2_ldr, 3, &loaded) == 12u && !loaded);
+    /* Mode 11, row 1: in WRAM, two MOVs and the LDR execute. */
+    assert(run_to_clk_stop(0, mov2_ldr, 3, &loaded) == 16u && loaded);
+    /* Mode 11, row 2: in WRAM, three MOVs execute, and the LDR does not. */
+    assert(run_to_clk_stop(0, mov3_ldr, 4, &loaded) == 16u && !loaded);
+    /* Mode 11, row 4: a MOV of 3 cycles executes, and the LDR does not. */
+    assert(run_to_clk_stop(1, shift_ldr, 2, &loaded) == 8u && !loaded);
+
+    printf("test_clk_stop_occurs_3_cycles_after_the_store OK\n");
+}
+
 static void test_clk_stop_halts_until_a_button_wakes_it(void) {
     psemu_t *ps = psemu_create();
     uint64_t steps;
@@ -2879,9 +2948,12 @@ static void test_clk_stop_halts_until_a_button_wakes_it(void) {
     psemu_run(ps, 10000u);
     assert(ps->cpu.total_steps > 0);
 
-    /* Request the stop. */
+    /* Request the stop. The stop occurs CLK_STOP_DELAY_CYCLES after the store, thus the B . executes
+       one more time first (see test_clk_stop_occurs_3_cycles_after_the_store). */
     psemu_bus_write32(&ps->bus, PSEMU_CLK_BASE + 0x4, 1u);
     assert(clk_stop_requested(&ps->clk));
+    psemu_run(ps, 1u);
+    assert(psemu_clk_stopped(ps));
 
     steps = ps->cpu.total_steps;
     psemu_run(ps, 10u * (uint32_t)PSEMU_ASSUMED_CPU_HZ);
@@ -3439,6 +3511,7 @@ int main(void) {
     test_rtc_keeps_real_time();
     test_rtc_date_rolls_over_at_midnight();
     test_clk_stop_halts_until_a_button_wakes_it();
+    test_clk_stop_occurs_3_cycles_after_the_store();
     test_arm_swp_misaligned();
     test_arm_r15_reads_12_ahead();
     test_ldm_stm_base_in_list();

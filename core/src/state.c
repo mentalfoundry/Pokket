@@ -337,6 +337,7 @@ static void state_visit(psemu_t *ps, st_t *s) {
     st_u32(s, &ps->clk.control);
     st_u32(s, &ps->clk.mode_write_scratch);
     st_u32(s, &ps->clk.control_write_scratch);
+    st_u32(s, &ps->clk.stop_delay);
 
     /* IOP power control. */
     st_u32(s, &ps->iop.data);
