@@ -84,7 +84,7 @@ The seconds row compares directly, because the emulated RTC keeps true 1Hz time.
 |---|---|---|---|---|---|
 | Real hardware, a stop of 12 seconds | `0x0000000C` | `0x00010001` | `0x2335FF35` | `0x037A037A` | 2026-10-16 |
 | Real hardware, a second run, after the screen acknowledges Timer1 before the unmask | `0x0000000C` | `0x00010001` | `0x3143FF43` | `0x03850385` | 2026-10-16 |
-| This emulator, a stop of 13 seconds | `0x0000000D` | `0x00000000` | `0x19FFFF32` | `0x03DB03DA` | 2026-10-16 |
+| This emulator, a stop of 13 seconds, DOWN and ACTION down for approximately 0.3 seconds each | `0x0000000D` | `0x00020002` | `0x19323232` | `0x02230223` | 2026-10-17 |
 
 
 **Mode 1, the masked mode.** The hardware runs below used the build in which UP started this mode. The code of the mode is the same. Each row is `CH00NNNN`: the Timer1 control, the Timer1 bit of the hold register, and the Timer1 count.
@@ -94,9 +94,9 @@ The seconds row compares directly, because the emulated RTC keeps true 1Hz time.
 | Real hardware, after a launch | `0x0000034F` | `0x600003E7` | `0x600003DA` | `0x6100021A` | 2026-10-16 |
 | Real hardware, after a launch | `0x0000034F` | `0x600003E7` | `0x600003DA` | `0x6100022F` | 2026-10-16 |
 | Real hardware, after a probe of screen 29 | `0x000001DB` | `0x600003E7` | `0x600003DB` | `0x61000279` | 2026-10-16 |
-| This emulator | `0x0000035B` | `0x600003E7` | `0x600003DB` | `0x600003DA` | 2026-10-16 |
+| This emulator, ACTION down for approximately 0.3 seconds | `0x0000035B` | `0x600003E7` | `0x600003DB` | `0x61000222` | 2026-10-17 |
 
-Between row 3 and row 4, Timer1 counts 1448, 1427, and 1354 ticks at /512, which is 173 to 185 ms. The count passes zero one time, thus a request is in the hold register at row 4. That time is the time that ACTION stayed down after the wake (see modes 3 and 0 below). In this emulator, Timer1 does not advance.
+Between row 3 and row 4, Timer1 counts 1448, 1427, and 1354 ticks at /512, which is 173 to 185 ms. The count passes zero one time, thus a request is in the hold register at row 4. That time is the time that ACTION stayed down after the wake (see modes 3 and 0 below). This emulator gives the same result.
 
 The build of 2026-08-03 (`a1ec1f9`), on the same unit, on 2026-10-16: `0x0000000B`, `0x00000001`, `0x00000017`. The code of screen 13 in that build is the same as in the build that the second unit used. Thus the build does not cause the result of `0x00000000` on 2026-08-03.
 
@@ -107,16 +107,16 @@ In the stop test, row 4 gives the same count before and after the stop, because 
 | Source | Row 1 (before) | Row 2 (1st after) | Row 3 (2nd after) | Row 4 (3rd after) | Date |
 |---|---|---|---|---|---|
 | Real hardware | `0x000003DB` | `0x000003DB` | `0x000002FE` | `0x000002FE` | 2026-10-16 |
-| This emulator | `0x000003DB` | `0x000003DB` | `0x000003DB` | `0x000003DB` | 2026-10-16 |
+| This emulator | `0x000003DB` | `0x000003DB` | `0x00000223` | `0x00000223` | 2026-10-17 |
 
-On real hardware, the CPU executes the first instruction after the store before it stops. In this emulator, the CPU stops before that instruction.
+On real hardware, the CPU executes the first instruction after the store before it stops. This emulator gives the same result.
 
 **Mode 6, a `MOV` of 1 cycle after the store.** The same rows as mode 2, but the reads are in the second, third, and fourth instructions after the store.
 
 | Source | Row 1 (before) | Row 2 (2nd after) | Row 3 (3rd after) | Row 4 (4th after) | Date |
 |---|---|---|---|---|---|
 | Real hardware | `0x000003DB` | `0x000003DB` | `0x0000024F` | `0x0000024F` | 2026-10-17 |
-| This emulator | `0x000003DB` | `0x000003DB` | `0x000003DB` | `0x000003DB` | 2026-10-16 |
+| This emulator | `0x000003DB` | `0x000003DB` | `0x00000223` | `0x00000223` | 2026-10-17 |
 
 With the `MOV`, the CPU executes two instructions after the store before it stops: the `MOV` and the first `LDR`. In mode 2, it executes one. Thus the stop does not occur after a fixed number of instructions. Two rules agree with both modes: a fixed number of cycles after the store, or the stop after the first data read after the store.
 
@@ -125,45 +125,45 @@ With the `MOV`, the CPU executes two instructions after the store before it stop
 | Source | Row 1 (before) | Row 2 (17th after) | Row 3 (18th after) | Row 4 (19th after) | Date |
 |---|---|---|---|---|---|
 | Real hardware | `0x000003DA` | `0x00000323` | `0x00000323` | `0x00000323` | 2026-10-17 |
-| This emulator | `0x000003DB` | `0x000003DB` | `0x000003DB` | `0x000003DA` | 2026-10-17 |
+| This emulator | `0x000003DB` | `0x00000222` | `0x00000222` | `0x00000222` | 2026-10-17 |
 
-The CPU stops before the first data read after the store. Thus the stop does not wait for a data read. Modes 2, 6, and 7 agree with a stop at a fixed time after the store. No measurement gives that time.
+The CPU stops before the first data read after the store. Thus the stop does not wait for a data read. Modes 2, 6, and 7 agree with a stop at a fixed time after the store. Mode 11 below gives that time.
 
 **Mode 8, a mask with no acknowledge.** Row 1 is after the mask of each source and an acknowledge of the buttons, with DOWN down. Row 2 is the hold register in the callback, at the entry (high) and after the mask of DOWN (low). Row 3 is approximately 10 ms later. Row 4 is after the release of DOWN.
 
 | Source | Row 1 | Row 2 | Row 3 | Row 4 | Date |
 |---|---|---|---|---|---|
 | Real hardware | `0x02800008` | `0x02880280` | `0x02800008` | `0x02800200` | 2026-10-17 |
-| This emulator | `0x00800008` | `0xFFFFFFFF` | `0x00800008` | `0x02800200` | 2026-10-17 |
+| This emulator | `0x00800008` | `0x00880080` | `0x00800008` | `0x02800200` | 2026-10-17 |
 
-On real hardware, the unmask of the held DOWN gives an interrupt, and the hold register has DOWN at the entry of the callback. The mask of DOWN removes DOWN from the hold register immediately, with no acknowledge, and DOWN stays absent while it stays down. The requests of Timer0 and the RTC (`0280`) stay in the hold register while they are masked. In this emulator, the acknowledge before the unmask clears the request of the press, and no interrupt occurs.
+On real hardware, the unmask of the held DOWN gives an interrupt, and the hold register has DOWN at the entry of the callback. The mask of DOWN removes DOWN from the hold register immediately, with no acknowledge, and DOWN stays absent while it stays down. The requests of Timer0 and the RTC (`0280`) stay in the hold register while they are masked. This emulator gives the same result, except for the RTC bit (`0200`) of the hold register.
 
 **Mode 9, a release with no acknowledge.** Row 1 is after the mask of each source and an acknowledge of the buttons, with DOWN down. Row 2 is the number of calls of the callback. Row 3 is the first call after the release of DOWN (`FFFFFFFF`: none). Row 4 is approximately 10 ms after the release.
 
 | Source | Row 1 | Row 2 | Row 3 | Row 4 | Date |
 |---|---|---|---|---|---|
 | Real hardware, DOWN down for approximately 2 seconds | `0x02800008` | `0x000142F0` | `0x02800000` | `0x02800000` | 2026-10-17 |
-| This emulator | `0x00800008` | `0x00000000` | `0xFFFFFFFF` | `0x02800200` | 2026-10-17 |
+| This emulator, DOWN down for approximately 0.3 seconds | `0x00800008` | `0x00002A6D` | `0x00800000` | `0x02800200` | 2026-10-17 |
 
-On real hardware, the callback runs 82672 times while DOWN stays down, with no acknowledge. In the call after the release, DOWN is absent from the hold register, and DOWN is still unmasked. Thus the release removes the request with no acknowledge.
+On real hardware, the callback runs 82672 times while DOWN stays down, with no acknowledge. In the call after the release, DOWN is absent from the hold register, and DOWN is still unmasked. Thus the release removes the request with no acknowledge. This emulator gives the same result, except for the number of calls, which follows the time that DOWN stays down, and the RTC bit of the hold register.
 
 **Mode 10, four stops with 1 to 4 `MOV`s before one read.** Each row is the count before the store (high) and the count of the read (low). Equal halves, or halves 1 apart, show a read before the stop.
 
 | Source | Row 1 (1 `MOV`) | Row 2 (2) | Row 3 (3) | Row 4 (4) | Date |
 |---|---|---|---|---|---|
 | Real hardware, ACTION down for approximately half a second at each wake | `0x03D903D9` | `0x02F2008A` | `0x008801C0` | `0x01BE018A` | 2026-10-17 |
-| This emulator | `0x03D903D9` | `0x03D703D7` | `0x03D503D5` | `0x03D403D3` | 2026-10-17 |
+| This emulator, ACTION down for approximately 0.3 seconds at each wake | `0x03D903D9` | `0x021F0067` | `0x00650295` | `0x029400DC` | 2026-10-17 |
 
-On real hardware, the read after 1 `MOV` occurs before the stop, and the reads after 2, 3, and 4 `MOV`s occur after the wake. The count before each store continues from the read of the stop before it. With the cycle costs of this emulator (2 cycles for each `MOV` from FLASH, 5 cycles for an `LDR` from a timer), modes 2, 6, 7, and 10 agree with this rule: after the store, the CPU starts the next instruction only while fewer than N cycles have passed, with N = 3 or N = 4. They also agree with an instruction rule: two instructions after the store, or one if the first is an `LDR`.
+On real hardware, the read after 1 `MOV` occurs before the stop, and the reads after 2, 3, and 4 `MOV`s occur after the wake. The count before each store continues from the read of the stop before it. Mode 11 below gives the rule. This emulator gives the same result.
 
 **Mode 11, four stops: from WRAM with 2, 3, and 4 `MOV`s, and from FLASH with one `MOV` of 3 cycles.** Each row is the count before the store (high) and the count of the read (low).
 
 | Source | Row 1 (WRAM, 2) | Row 2 (WRAM, 3) | Row 3 (WRAM, 4) | Row 4 (FLASH, shift) | Date |
 |---|---|---|---|---|---|
 | Real hardware | `0x03D903D9` | `0x019B02EB` | `0x02E90287` | `0x0286026A` | 2026-10-17 |
-| This emulator | `0x03D903D9` | `0x03D703D7` | `0x03D503D5` | `0x03D303D3` | 2026-10-17 |
+| This emulator, ACTION down for approximately 0.3 seconds at each wake | `0x03D903D9` | `0x021F0067` | `0x00650295` | `0x029300DB` | 2026-10-17 |
 
-On real hardware, only the read after 2 `MOV`s in WRAM occurs before the stop. Of the three rules in [README.md](README.md), only the rule with 3 cycles gives that result. With the cycle costs of this emulator, that rule also gives each result of modes 0, 1, 2, 6, 7, and 10: after the store, the CPU starts the next instruction only while fewer than 3 cycles have passed since the store.
+On real hardware, only the read after 2 `MOV`s in WRAM occurs before the stop. Of the three rules in [README.md](README.md), only the rule with 3 cycles gives that result. With the cycle costs of this emulator, that rule also gives each result of modes 0, 1, 2, 6, 7, and 10: after the store, the CPU starts the next instruction only while fewer than 3 cycles have passed since the store. This emulator uses that rule (`CLK_STOP_DELAY_CYCLES` in `core/src/clk.h`), and it gives the same result.
 
 **Mode 5, the hold bit of a held button.** Each row is the hold register (high) and the status register (low). Row 1 is at the start, with DOWN down. Row 2 is after the mask of each source and an acknowledge of DOWN. Row 3 is approximately 10 ms later. Row 4 is after the release of DOWN.
 
@@ -171,9 +171,9 @@ On real hardware, only the read after 2 `MOV`s in WRAM occurs before the stop. O
 |---|---|---|---|---|---|
 | Real hardware, immediately after mode 6 | `0x02800208` | `0x02800208` | `0x02800208` | `0x02800200` | 2026-10-17 |
 | Real hardware, after a new start of the app | `0x02800208` | `0x02800208` | `0x02800208` | `0x02800200` | 2026-10-17 |
-| This emulator | `0x00880008` | `0x00800008` | `0x00800008` | `0x02800200` | 2026-10-16 |
+| This emulator | `0x00800008` | `0x00800008` | `0x00800008` | `0x02800200` | 2026-10-17 |
 
-Each source is masked at the start of both real runs. Mode 6 masks and acknowledges each source at its end, and the startup measurements mask each source. `tools/bench_probe.c` shows an enable register of `0x00000000` at the start of mode 5 in both conditions. On real hardware, DOWN stays down in rows 1 to 3, and its request does not occur, at the press or after an acknowledge. The requests of Timer0 and the RTC (`0280`) occur after the acknowledge at the end of mode 6, with each source masked. Thus a masked Timer0 and a masked RTC record a request, and a masked button that stays down does not. This emulator records the press of the masked DOWN in row 1.
+Each source is masked at the start of both real runs. Mode 6 masks and acknowledges each source at its end, and the startup measurements mask each source. `tools/bench_probe.c` shows an enable register of `0x00000000` at the start of mode 5 in both conditions. On real hardware, DOWN stays down in rows 1 to 3, and its request does not occur, at the press or after an acknowledge. The requests of Timer0 and the RTC (`0280`) occur after the acknowledge at the end of mode 6, with each source masked. Thus a masked Timer0 and a masked RTC record a request, and a masked button that stays down does not. This emulator gives the same result for DOWN.
 
 **Modes 3 and 4, the record of each interrupt.** Mode 3 unmasks ACTION and Timer1, and mode 4 unmasks each button and Timer1. Each row holds the first interrupt (high) and the second interrupt (low): row 1 the Timer1 interrupts before and after the store, row 2 the hold register, row 3 the Timer1 count, and row 4 the phase.
 
@@ -182,8 +182,8 @@ Each source is masked at the start of both real runs. Mode 6 masks and acknowled
 | Real hardware, mode 3, a short press of ACTION | `0x00000000` | `0x02810001` | `0x03DA03DA` | `0x00010001` | 2026-10-16 |
 | Real hardware, mode 4, a short press of ACTION | `0x00010001` | `0x02880008` | `0x03E703E7` | `0x00000000` | 2026-10-16 |
 | Real hardware, mode 3, ACTION down for approximately 3 seconds | `0x0000001D` | `0x02810001` | `0x03DA03D9` | `0x00010001` | 2026-10-16 |
-| This emulator, mode 3 | `0x00000000` | `0x0281FFFF` | `0x03DBFFFF` | `0x0001FFFF` | 2026-10-16 |
-| This emulator, mode 4 | `0x00000000` | `0x0281FFFF` | `0x03DBFFFF` | `0x0001FFFF` | 2026-10-16 |
+| This emulator, mode 3, ACTION down for approximately 0.3 seconds | `0x00000002` | `0x02810001` | `0x03DB03DA` | `0x00010001` | 2026-10-17 |
+| This emulator, mode 4, DOWN and ACTION down for approximately 0.3 seconds each | `0x00020002` | `0x00880008` | `0x03E703E7` | `0x00000000` | 2026-10-17 |
 
 In mode 3, the first two interrupts are ACTION, and Timer1 has the count of the store at both. With ACTION down for approximately 3 seconds, the handler counts 29 Timer1 interrupts after the store. Mode 3 masks each source within three instructions after the code of the mode runs again. Thus the code of the mode does not run while ACTION stays down, and the CPU executes only the interrupt handler. In mode 4, the first two interrupts are DOWN, before the store, at the start count of Timer1. That is the press of DOWN that starts the mode. The mode acknowledges DOWN before the unmask, and the request comes back while DOWN stays down.
 
