@@ -120,17 +120,23 @@ On real hardware, the CPU executes the first instruction after the store before 
 
 With the `MOV`, the CPU executes two instructions after the store before it stops: the `MOV` and the first `LDR`. In mode 2, it executes one. Thus the stop does not occur after a fixed number of instructions. Two rules agree with both modes: a fixed number of cycles after the store, or the stop after the first data read after the store.
 
-**Mode 7, 16 `MOV`s after the store.** The same rows as mode 2, but the reads are in the 17th, 18th, and 19th instructions after the store. No real-hardware run yet.
+**Mode 7, 16 `MOV`s after the store.** The same rows as mode 2, but the reads are in the 17th, 18th, and 19th instructions after the store.
 
 | Source | Row 1 (before) | Row 2 (17th after) | Row 3 (18th after) | Row 4 (19th after) | Date |
 |---|---|---|---|---|---|
+| Real hardware | `0x000003DA` | `0x00000323` | `0x00000323` | `0x00000323` | 2026-10-17 |
 | This emulator | `0x000003DB` | `0x000003DB` | `0x000003DB` | `0x000003DA` | 2026-10-17 |
 
-**Mode 8, a mask with no acknowledge.** Row 1 is after the mask of each source and an acknowledge of the buttons, with DOWN down. Row 2 is the hold register in the callback, at the entry (high) and after the mask of DOWN (low). Row 3 is approximately 10 ms later. Row 4 is after the release of DOWN. No real-hardware run yet.
+The CPU stops before the first data read after the store. Thus the stop does not wait for a data read. Modes 2, 6, and 7 agree with a stop at a fixed time after the store. No measurement gives that time.
+
+**Mode 8, a mask with no acknowledge.** Row 1 is after the mask of each source and an acknowledge of the buttons, with DOWN down. Row 2 is the hold register in the callback, at the entry (high) and after the mask of DOWN (low). Row 3 is approximately 10 ms later. Row 4 is after the release of DOWN.
 
 | Source | Row 1 | Row 2 | Row 3 | Row 4 | Date |
 |---|---|---|---|---|---|
+| Real hardware | `0x02800008` | `0x02880280` | `0x02800008` | `0x02800200` | 2026-10-17 |
 | This emulator | `0x00800008` | `0xFFFFFFFF` | `0x00800008` | `0x02800200` | 2026-10-17 |
+
+On real hardware, the unmask of the held DOWN gives an interrupt, and the hold register has DOWN at the entry of the callback. The mask of DOWN removes DOWN from the hold register immediately, with no acknowledge, and DOWN stays absent while it stays down. The requests of Timer0 and the RTC (`0280`) stay in the hold register while they are masked. In this emulator, the acknowledge before the unmask clears the request of the press, and no interrupt occurs.
 
 **Mode 5, the hold bit of a held button.** Each row is the hold register (high) and the status register (low). Row 1 is at the start, with DOWN down. Row 2 is after the mask of each source and an acknowledge of DOWN. Row 3 is approximately 10 ms later. Row 4 is after the release of DOWN.
 
