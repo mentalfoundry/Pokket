@@ -147,11 +147,14 @@ On real hardware, the unmask of the held DOWN gives an interrupt, and the hold r
 
 On real hardware, the callback runs 82672 times while DOWN stays down, with no acknowledge. In the call after the release, DOWN is absent from the hold register, and DOWN is still unmasked. Thus the release removes the request with no acknowledge.
 
-**Mode 10, four stops with 1 to 4 `MOV`s before one read.** Each row is the count before the store (high) and the count of the read (low). Equal halves, or halves 1 apart, show a read before the stop. No real-hardware run yet.
+**Mode 10, four stops with 1 to 4 `MOV`s before one read.** Each row is the count before the store (high) and the count of the read (low). Equal halves, or halves 1 apart, show a read before the stop.
 
 | Source | Row 1 (1 `MOV`) | Row 2 (2) | Row 3 (3) | Row 4 (4) | Date |
 |---|---|---|---|---|---|
+| Real hardware, ACTION down for approximately half a second at each wake | `0x03D903D9` | `0x02F2008A` | `0x008801C0` | `0x01BE018A` | 2026-10-17 |
 | This emulator | `0x03D903D9` | `0x03D703D7` | `0x03D503D5` | `0x03D403D3` | 2026-10-17 |
+
+On real hardware, the read after 1 `MOV` occurs before the stop, and the reads after 2, 3, and 4 `MOV`s occur after the wake. The count before each store continues from the read of the stop before it. With the cycle costs of this emulator (2 cycles for each `MOV` from FLASH, 5 cycles for an `LDR` from a timer), modes 2, 6, 7, and 10 agree with this rule: after the store, the CPU starts the next instruction only while fewer than N cycles have passed, with N = 3 or N = 4. They also agree with an instruction rule: two instructions after the store, or one if the first is an `LDR`.
 
 **Mode 5, the hold bit of a held button.** Each row is the hold register (high) and the status register (low). Row 1 is at the start, with DOWN down. Row 2 is after the mask of each source and an acknowledge of DOWN. Row 3 is approximately 10 ms later. Row 4 is after the release of DOWN.
 
