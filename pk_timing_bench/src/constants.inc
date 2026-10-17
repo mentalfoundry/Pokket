@@ -378,7 +378,7 @@
 @ The selected mode of screen 13 (0 to STOP_MODE_COUNT - 1). Up selects the next mode, and Down
 @ runs it. See stop_buttons in cpu.s.
 .equ WRAM_STOP_MODE,         0x694
-.equ STOP_MODE_COUNT,        11
+.equ STOP_MODE_COUNT,        12
 @ 4 words: the four rows of mode 1, the masked mode. See stop_test_masked in cpu.s.
 .equ WRAM_STOP_MASKED,       0x698
 @ 4 words each: the four rows of modes 2, 3, and 4. See stop_test_instr and stop_test_capture.
@@ -389,13 +389,17 @@
 @ The values that the handler of modes 3 and 4 records. The phase (0 before the store, 1 after
 @ it), the Timer1 interrupts in each phase, the number of interrupts that it recorded (0 to 2), and
 @ for the first two interrupts of each source: the hold register, the Timer1 count, and the phase.
-.equ WRAM_CAP_PHASE,         0x6D8
-.equ WRAM_CAP_BEFORE,        0x6DC
-.equ WRAM_CAP_AFTER,         0x6E0
-.equ WRAM_CAP_N,             0x6E4
-.equ WRAM_CAP_HOLD,          0x6E8
-.equ WRAM_CAP_COUNT,         0x6F0
-.equ WRAM_CAP_PH,            0x6F8
+@ These words are only necessary during a run of mode 3 or 4. Thus they use the buffer of the CPU
+@ screens, which a CPU screen fills again each time that it runs.
+.equ WRAM_CAP_PHASE,         WRAM_CPU_BUF + 0x00
+.equ WRAM_CAP_BEFORE,        WRAM_CPU_BUF + 0x04
+.equ WRAM_CAP_AFTER,         WRAM_CPU_BUF + 0x08
+.equ WRAM_CAP_N,             WRAM_CPU_BUF + 0x0C
+.equ WRAM_CAP_HOLD,          WRAM_CPU_BUF + 0x10
+.equ WRAM_CAP_COUNT,         WRAM_CPU_BUF + 0x18
+.equ WRAM_CAP_PH,            WRAM_CPU_BUF + 0x20
+@ 4 words: the four rows of mode 11 of screen 13. See stop_test_wram in cpu.s.
+.equ WRAM_STOP_M11,          0x6D8
 @ 4 words each: the four rows of modes 7 to 10 of screen 13. See stop_test_instr,
 @ stop_test_unmask, stop_test_release, and stop_test_window in cpu.s. These words are below the app
 @ stack, which starts at 0x800 and grows down. In tools/bench_probe.c runs of each screen, each

@@ -156,6 +156,12 @@ On real hardware, the callback runs 82672 times while DOWN stays down, with no a
 
 On real hardware, the read after 1 `MOV` occurs before the stop, and the reads after 2, 3, and 4 `MOV`s occur after the wake. The count before each store continues from the read of the stop before it. With the cycle costs of this emulator (2 cycles for each `MOV` from FLASH, 5 cycles for an `LDR` from a timer), modes 2, 6, 7, and 10 agree with this rule: after the store, the CPU starts the next instruction only while fewer than N cycles have passed, with N = 3 or N = 4. They also agree with an instruction rule: two instructions after the store, or one if the first is an `LDR`.
 
+**Mode 11, four stops: from WRAM with 2, 3, and 4 `MOV`s, and from FLASH with one `MOV` of 3 cycles.** Each row is the count before the store (high) and the count of the read (low). No real-hardware run yet.
+
+| Source | Row 1 (WRAM, 2) | Row 2 (WRAM, 3) | Row 3 (WRAM, 4) | Row 4 (FLASH, shift) | Date |
+|---|---|---|---|---|---|
+| This emulator | `0x03D903D9` | `0x03D703D7` | `0x03D503D5` | `0x03D303D3` | 2026-10-17 |
+
 **Mode 5, the hold bit of a held button.** Each row is the hold register (high) and the status register (low). Row 1 is at the start, with DOWN down. Row 2 is after the mask of each source and an acknowledge of DOWN. Row 3 is approximately 10 ms later. Row 4 is after the release of DOWN.
 
 | Source | Row 1 | Row 2 | Row 3 | Row 4 | Date |

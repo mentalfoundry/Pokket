@@ -1662,6 +1662,7 @@ draw_stop_rows:
 @   8  stop_test_unmask     the hold bit of a held button after a mask with no acknowledge
 @   9  stop_test_release    the hold bit of a button after a release with no acknowledge
 @  10  stop_test_window     four stops, with 1, 2, 3, and 4 MOVs before one read of Timer1
+@  11  stop_test_wram       four stops: three from WRAM, and one with a MOV of 3 cycles
 @ -> r1 = 1 if this function used a press, and 0 if not. Keeps r0 and r4 to r11.
     .global stop_buttons
 stop_buttons:
@@ -1710,6 +1711,7 @@ stop_modes:
     .word stop_test_unmask      @ 8
     .word stop_test_release     @ 9
     .word stop_test_window      @ 10
+    .word stop_test_wram        @ 11
 
 @ The masked mode of screen 13. It is the same as stop_test_phased, but Timer1 stays masked. Only
 @ ACTION is unmasked, for the wake, and its handler acknowledges only the buttons. Thus each Timer1
@@ -1720,7 +1722,42 @@ stop_modes:
 @   Row 2: immediately after Timer1 is armed, and after an acknowledge of Timer1.
 @   Row 3: immediately before the store to CLK control.
 @   Row 4: immediately after the wake.
-@ The rows of modes 1 to 4.
+@ r4 = TIMER1_BASE. Arms Timer1 at STOP_TIMER_PERIOD with STOP_TIMER_CTRL, approximately 8Hz, then
+@ acknowledges the buttons and Timer1. A Timer1 request that an earlier expiry latched would cause
+@ an interrupt at the unmask, and that interrupt is not part of a test.
+@ -> r0 = INTC_BASE, r1 = INT_BUTTON_BITS | INT_TIMER1_BIT.
+stop_arm_timer1:
+    mov r0, #0
+    str r0, [r4, #8]
+    ldr r0, =STOP_TIMER_PERIOD
+    str r0, [r4]
+    mov r0, #STOP_TIMER_CTRL
+    str r0, [r4, #8]
+    ldr r0, =INTC_BASE
+    ldr r1, =(INT_BUTTON_BITS | INT_TIMER1_BIT)
+    str r1, [r0, #0x10]
+    bx lr
+
+@ A bar across the middle of the screen, at rows 14 to 16. It stays on the LCD while the CPU is
+@ stopped. Uses r0 to r3.
+stop_bar:
+    push {lr}
+    mov r0, #14
+    mov r1, #0
+    mov r2, #31
+    bl draw_hline
+    mov r0, #15
+    mov r1, #0
+    mov r2, #31
+    bl draw_hline
+    mov r0, #16
+    mov r1, #0
+    mov r2, #31
+    bl draw_hline
+    pop {pc}
+    .ltorg
+
+@ The rows of modes 1 to 11.
 stop_rows:
     .word WRAM_STOP_MASKED
     .word WRAM_STOP_M2
@@ -1732,6 +1769,7 @@ stop_rows:
     .word WRAM_STOP_M8
     .word WRAM_STOP_M9
     .word WRAM_STOP_M10
+    .word WRAM_STOP_M11
 
     .global stop_test_masked
 stop_test_masked:
@@ -1749,15 +1787,7 @@ stop_test_masked:
     adr lr, 1f
     ldr r1, =register_irq_handler
     bx r1
-1:  mov r0, #0                          @ arm Timer1, the same as stop_test_phased
-    str r0, [r4, #8]
-    ldr r0, =STOP_TIMER_PERIOD
-    str r0, [r4]
-    mov r0, #STOP_TIMER_CTRL
-    str r0, [r4, #8]
-    ldr r0, =INTC_BASE                  @ acknowledge the buttons and Timer1
-    ldr r1, =(INT_BUTTON_BITS | INT_TIMER1_BIT)
-    str r1, [r0, #0x10]
+1:  bl stop_arm_timer1
     bl stop_sample
     str r0, [r8, #4]
 
@@ -1765,18 +1795,7 @@ stop_test_masked:
     mov r1, #1                          @ ACTION is bit 0
     str r1, [r0]
 
-    mov r0, #14                         @ the same bar as stop_test_phased
-    mov r1, #0
-    mov r2, #31
-    bl draw_hline
-    mov r0, #15
-    mov r1, #0
-    mov r2, #31
-    bl draw_hline
-    mov r0, #16
-    mov r1, #0
-    mov r2, #31
-    bl draw_hline
+    bl stop_bar
 
     bl stop_sample
     str r0, [r8, #8]
@@ -1850,31 +1869,12 @@ stop_test_instr:
     adr lr, 1f
     ldr r1, =register_irq_handler
     bx r1
-1:  mov r0, #0                          @ arm Timer1, the same as the other modes
-    str r0, [r4, #8]
-    ldr r0, =STOP_TIMER_PERIOD
-    str r0, [r4]
-    mov r0, #STOP_TIMER_CTRL
-    str r0, [r4, #8]
-    ldr r0, =INTC_BASE
-    ldr r1, =(INT_BUTTON_BITS | INT_TIMER1_BIT)
-    str r1, [r0, #0x10]
+1:  bl stop_arm_timer1
     ldr r0, =INTC_ENABLE                @ unmask only ACTION
     mov r1, #1                          @ ACTION is bit 0
     str r1, [r0]
 
-    mov r0, #14                         @ the same bar as the other modes
-    mov r1, #0
-    mov r2, #31
-    bl draw_hline
-    mov r0, #15
-    mov r1, #0
-    mov r2, #31
-    bl draw_hline
-    mov r0, #16
-    mov r1, #0
-    mov r2, #31
-    bl draw_hline
+    bl stop_bar
 
     ldr r0, =CLK_CONTROL_ADDR
     mov r1, #1
@@ -1978,32 +1978,13 @@ stop_test_capture:
     adr lr, 1f
     ldr r1, =register_irq_handler
     bx r1
-1:  mov r0, #0                          @ arm Timer1
-    str r0, [r4, #8]
-    ldr r0, =STOP_TIMER_PERIOD
-    str r0, [r4]
-    mov r0, #STOP_TIMER_CTRL
-    str r0, [r4, #8]
-    ldr r0, =INTC_BASE                  @ acknowledge the buttons and Timer1
-    ldr r1, =(INT_BUTTON_BITS | INT_TIMER1_BIT)
-    str r1, [r0, #0x10]
+1:  bl stop_arm_timer1
     cmp r9, #3                          @ mode 3: only ACTION of the buttons
     ldreq r1, =(1 | INT_TIMER1_BIT)
     ldr r0, =INTC_ENABLE
     str r1, [r0]
 
-    mov r0, #14                         @ the same bar as the other modes
-    mov r1, #0
-    mov r2, #31
-    bl draw_hline
-    mov r0, #15
-    mov r1, #0
-    mov r2, #31
-    bl draw_hline
-    mov r0, #16
-    mov r1, #0
-    mov r2, #31
-    bl draw_hline
+    bl stop_bar
 
     ldr r2, =WRAM_CAP_PHASE
     mov r3, #1
@@ -2287,36 +2268,126 @@ stop_test_window:
     adr lr, 1f
     ldr r1, =register_irq_handler
     bx r1
-1:  mov r0, #0                          @ arm Timer1, the same as the other modes
-    str r0, [r4, #8]
-    ldr r0, =STOP_TIMER_PERIOD
-    str r0, [r4]
-    mov r0, #STOP_TIMER_CTRL
-    str r0, [r4, #8]
-    ldr r0, =INTC_BASE
-    ldr r1, =(INT_BUTTON_BITS | INT_TIMER1_BIT)
-    str r1, [r0, #0x10]
+1:  bl stop_arm_timer1
     ldr r0, =INTC_ENABLE                @ unmask only ACTION
     mov r1, #1
     str r1, [r0]
 
-    mov r0, #14                         @ the same bar as the other modes
-    mov r1, #0
-    mov r2, #31
-    bl draw_hline
-    mov r0, #15
-    mov r1, #0
-    mov r2, #31
-    bl draw_hline
-    mov r0, #16
-    mov r1, #0
-    mov r2, #31
-    bl draw_hline
+    bl stop_bar
 
     WINDOW_STOP 1, 0
     WINDOW_STOP 2, 4
     WINDOW_STOP 3, 8
     WINDOW_STOP 4, 12
+
+    ldr r0, =INTC_MASK                  @ mask and acknowledge each source
+    mvn r1, #0
+    str r1, [r0]
+    ldr r0, =INTC_BASE
+    str r1, [r0, #0x10]
+    mov r0, #0                          @ remove the handler
+    adr lr, 2f
+    ldr r1, =register_irq_handler
+    bx r1
+2:  mov r0, #0                          @ restore Timer1
+    str r0, [r4, #8]
+    str r10, [r4]
+    str r11, [r4, #8]
+    pop {r4, r5, r6, r7, r8, r9, r10, r11, lr}
+    bx lr
+    .ltorg
+
+@ The code of one stop of mode 11 that executes from WRAM: the store, k MOVs, the read of Timer1,
+@ and the return. Each MOV costs 1 cycle in WRAM. r0 = CLK_CONTROL_ADDR, r1 = 1, r4 = TIMER1_BASE.
+@ -> r6 = the count of the read. copy_to_pad copies it to WRAM_PROBE_PAD (8 words).
+    .macro WRAM_TEMPLATE k
+wram_tpl_\k:
+    str r1, [r0]                        @ the store under test
+    .rept \k
+    mov r0, r0
+    .endr
+    ldr r6, [r4, #4]                    @ the read after the MOVs
+    bx lr
+wram_end_\k:
+    .endm
+    WRAM_TEMPLATE 2
+    WRAM_TEMPLATE 3
+    WRAM_TEMPLATE 4
+
+@ r0 = the first word, r1 = the end. Copies the words to WRAM_PROBE_PAD. Uses r0, r2, and r3.
+copy_to_pad:
+    ldr r2, =WRAM_PROBE_PAD
+1:  ldr r3, [r0], #4
+    str r3, [r2], #4
+    cmp r0, r1
+    blo 1b
+    bx lr
+    .ltorg
+
+@ One stop of mode 11 that executes from WRAM, with k MOVs. d = the digit at the top of the LCD.
+@ The row at offset off is the count before the store (bits 16 to 31) and the count of the read
+@ (bits 0 to 15).
+    .macro WRAM_STOP k, d, off
+    mov r0, #\d
+    mov r1, #0
+    mov r2, #(4 + 4 * \d)              @ columns 8, 12, and 16
+    bl draw_glyph
+    ldr r0, =wram_tpl_\k
+    ldr r1, =wram_end_\k
+    bl copy_to_pad
+    ldr r0, =CLK_CONTROL_ADDR
+    mov r1, #1
+    ldr r2, =WRAM_PROBE_PAD
+    ldr r5, [r4, #4]                    @ the count before the store
+    mov lr, pc
+    bx r2                               @ the store, the MOVs, and the read, in WRAM
+    mov r5, r5, lsl #16
+    mov r6, r6, lsl #16
+    orr r5, r5, r6, lsr #16
+    str r5, [r9, #\off]
+    .endm
+
+@ Mode 11. The same as mode 10, but the first three stops execute from WRAM, where a MOV costs 1
+@ cycle, with 2, 3, and 4 MOVs between the store and one read of Timer1. The fourth stop executes
+@ from FLASH, with one MOV with a register-specified shift (3 cycles) before the read. Each row is
+@ the count before the store (bits 16 to 31) and the count of the read (bits 0 to 15). If the two
+@ halves are equal, or 1 apart, the read occurred before the stop.
+stop_test_wram:
+    push {r4, r5, r6, r7, r8, r9, r10, r11, lr}
+    ldr r4, =TIMER1_BASE
+    ldr r10, [r4]                       @ keep Timer1
+    ldr r11, [r4, #8]
+    ldr r9, =WRAM_STOP_M11
+
+    ldr r0, =stop_masked_handler
+    adr lr, 1f
+    ldr r1, =register_irq_handler
+    bx r1
+1:  bl stop_arm_timer1
+    ldr r0, =INTC_ENABLE                @ unmask only ACTION
+    mov r1, #1
+    str r1, [r0]
+
+    bl stop_bar
+
+    WRAM_STOP 2, 1, 0
+    WRAM_STOP 3, 2, 4
+    WRAM_STOP 4, 3, 8
+
+    mov r0, #4                          @ the fourth stop, from FLASH
+    mov r1, #0
+    mov r2, #20
+    bl draw_glyph
+    ldr r0, =CLK_CONTROL_ADDR
+    mov r1, #1
+    ldr r5, [r4, #4]                    @ the count before the store
+    str r1, [r0]                        @ the store under test
+    mov r7, r7, lsl r1                  @ a register-specified shift: 3 cycles
+    ldr r6, [r4, #4]                    @ the read after it
+    mov r5, r5, lsl #16
+    mov r6, r6, lsl #16
+    orr r5, r5, r6, lsr #16
+    str r5, [r9, #12]
 
     ldr r0, =INTC_MASK                  @ mask and acknowledge each source
     mvn r1, #0
@@ -2422,35 +2493,12 @@ stop_test_phased:
     adr lr, 1f
     ldr r1, =register_irq_handler
     bx r1
-1:  mov r0, #0                          @ arm Timer1
-    str r0, [r4, #8]
-    ldr r0, =STOP_TIMER_PERIOD
-    str r0, [r4]
-    mov r0, #STOP_TIMER_CTRL
-    str r0, [r4, #8]
-
-    @ Acknowledge the buttons and Timer1 before the unmask. A Timer1 request that an earlier
-    @ expiry latched causes an interrupt at the unmask, and that interrupt is not part of this test.
-    ldr r0, =INTC_BASE
-    ldr r1, =(INT_BUTTON_BITS | INT_TIMER1_BIT)
-    str r1, [r0, #0x10]
+1:  bl stop_arm_timer1
 
     ldr r0, =INTC_ENABLE                @ unmask the buttons and Timer1
     str r1, [r0]
 
-    @ A bar across the middle of the screen. It stays on the LCD while the CPU is stopped.
-    mov r0, #14
-    mov r1, #0
-    mov r2, #31
-    bl draw_hline
-    mov r0, #15
-    mov r1, #0
-    mov r2, #31
-    bl draw_hline
-    mov r0, #16
-    mov r1, #0
-    mov r2, #31
-    bl draw_hline
+    bl stop_bar
 
     ldr r0, =RTC_TIME_ADDR              @ the seconds before the store
     ldr r0, [r0]

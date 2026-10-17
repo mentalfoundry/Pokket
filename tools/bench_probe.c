@@ -76,7 +76,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "usage: %s <bios.bin> <app.mcs> [frames] [pages] [probe]\n", argv[0]);
         fprintf(stderr, "  pages: screen number to page to after launch (0 = leave wherever it lands)\n");
         fprintf(stderr, "  probe: with pages = 29, the probe to select and run with Down\n");
-        fprintf(stderr, "         with pages = 13, the mode of screen 13 (0 to 10), which Down runs. ACTION wakes the CPU\n");
+        fprintf(stderr, "         with pages = 13, the mode of screen 13 (0 to 11), which Down runs. ACTION wakes the CPU\n");
         return 1;
     }
     bios = read_file(argv[1], &bios_size);
@@ -168,11 +168,11 @@ int main(int argc, char **argv) {
             psemu_run(ps, 33000u);
         }
         /* On screen 13, Down runs the CLK stop test, and the CPU stays stopped until a button wakes
-           it. Only ACTION wakes it. Wait, then press ACTION. Mode 10 makes four stops, thus it gets
-           four presses. */
+           it. Only ACTION wakes it. Wait, then press ACTION. Modes 10 and 11 make four stops, thus they
+           get four presses. */
         if (pages == 13) {
             int stop;
-            for (stop = 0; stop < (probe == 10 ? 4 : 1); stop++) {
+            for (stop = 0; stop < (probe == 10 || probe == 11 ? 4 : 1); stop++) {
                 for (k = 0; k < 400; k++) {
                     psemu_run(ps, 33000u);
                 }
@@ -200,8 +200,8 @@ int main(int argc, char **argv) {
                     psemu_bus_read32(&ps->bus, base), psemu_bus_read32(&ps->bus, base + 4u),
                     psemu_bus_read32(&ps->bus, base + 8u), psemu_bus_read32(&ps->bus, base + 12u));
             }
-            for (k = 5; k <= 10; k++) {
-                static const uint32_t bases[6] = {0x670u, 0x270u, 0x700u, 0x710u, 0x720u, 0x730u};
+            for (k = 5; k <= 11; k++) {
+                static const uint32_t bases[7] = {0x670u, 0x270u, 0x700u, 0x710u, 0x720u, 0x730u, 0x6D8u};
                 uint32_t base = bases[k - 5];
                 printf("screen13 mode %d rows @0x%03X: 0x%08X 0x%08X 0x%08X 0x%08X\n", k, base,
                     psemu_bus_read32(&ps->bus, base), psemu_bus_read32(&ps->bus, base + 4u),
