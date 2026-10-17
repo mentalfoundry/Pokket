@@ -68,7 +68,6 @@ This app runs its startup measurements one time, at power-on. A person then page
 - **UP** and **DOWN**, on screen 13 only, select a mode of the CLK stop test and run it. That is the one measurement here that does not run at startup, because only a press of ACTION from a person can end it. See "Screen 13" below.
 - **DOWN**, on screen 15 only, arms the COM timing run before the device goes into a memory card slot, and it clears the captures of the run before. **UP**, on screen 15 only, shows the next stored capture after the device comes out. Before the device goes into the slot, **ACTION** ends an armed run with no capture. See "Screen 15" below.
 - **A hold on ACTION** opens a CONTINUE/EXIT prompt. That prompt returns to the system without a hardware reset. UP selects CONTINUE, DOWN selects EXIT, and a new ACTION press confirms the selection. See "Screen index used for the continue/exit prompt" in `src/constants.inc`, and `pb_prompt_confirm_exit` in `src/ui.s`, for the full behavior. The hold does not operate in these conditions:
-  - **The device is in a memory card slot.** The slot covers the buttons. Take the device out first.
   - **The run of screen 15 is armed.** The run does not read the buttons until it ends. Before the device goes into the slot, press ACTION one time to end the run, then hold ACTION. After the device goes into the slot, the run ends when the device comes out.
   - **The CPU is stopped by screen 13.** Press ACTION one time to wake the device, then hold ACTION.
 
