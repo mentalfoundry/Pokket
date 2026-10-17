@@ -237,7 +237,7 @@ The two rows use different divisors deliberately. A running pulse is a full seco
 
 ### Screen 13: does bit 0 of CLK control (0x0B000004) stop the CPU?
 
-Each other screen here reports a number that it measured at startup. This screen is interactive. **UP selects the next mode, and DOWN runs the selected mode.** The digit after the `D` at the top is the selected mode, in hex: mode 10 shows `A`, and mode 11 shows `B`. Mode 0 is the stop test that the paragraphs below describe. The measured quantity is the time that the CPU stayed stopped. On a device with no other input, only a button press from a person ends that time.
+Each other screen here reports a number that it measured at startup. This screen is interactive. **UP selects the next mode, and DOWN runs the selected mode.** The digit after the `D` at the top is the selected mode, in hex: mode 10 shows `A`, mode 11 shows `B`, and mode 12 shows `C`. Mode 0 is the stop test that the paragraphs below describe. The measured quantity is the time that the CPU stayed stopped. On a device with no other input, only a button press from a person ends that time.
 
 **The reason for this screen.** A real commercial app arms an idle timer. When that timer expires and no button is down, the app writes `1` to this register. That write is the last step of a power-down sequence. The earlier steps turn the sound off, mask the RTC interrupt, and turn the display off. Real hardware sleeps at that point, which a test confirms: the screen blanks, and a button press brings it back. But *that this register is the register that stops the CPU* was an inference from the writes next to it. This screen tests the write alone, with no other part of that sequence. No quantity of tracing of the real app can give that separation. See "CLK control" in [docs/hardware-notes.md](../docs/hardware-notes.md).
 
@@ -261,6 +261,7 @@ Each other screen here reports a number that it measured at startup. This screen
 | 9 | `stop_test_release` | DOWN | the hold bit of a button after a release with no acknowledge. This mode does not stop the CPU. |
 | 10 (`A`) | `stop_test_window` | ACTION | four stops, with 1, 2, 3, and 4 `MOV`s before one read of Timer1 |
 | 11 (`B`) | `stop_test_wram` | ACTION | four stops: three from WRAM, and one with a `MOV` of 3 cycles |
+| 12 (`C`) | `stop_test_rtc` | none | the RTC request at each edge of the RTC line. This mode does not stop the CPU. |
 
 **Mode 1, the masked mode.** Timer1 stays masked, and the handler acknowledges only the buttons. Thus a Timer1 request stays in the hold register of the interrupt controller, and the screen reads it. Each of the four rows is one sample, in the form `CH00NNNN`: `C` is the Timer1 control (`6` = /512 and enabled), `H` is the Timer1 bit of the hold register (`1` = a request), and `NNNN` is the Timer1 count. Row 1 is before the test changes Timer1, row 2 is immediately after the arm and an acknowledge, row 3 is immediately before the store, and row 4 is immediately after the wake. This emulator gives `0000035B`, `600003E7`, `600003DB`, and `61000222`. Row 4 shows a request, because Timer1 counts while ACTION stays down after the wake, the same as on real hardware.
 
@@ -303,6 +304,17 @@ If the hold bit of a button is its level AND its enable bit, the interrupts stop
 | two instructions after the store, or one if the first is an `LDR` | a | a | a | b |
 
 These results use the cycle costs of this emulator. A result that agrees with no rule shows that one of those costs, or each rule, is incorrect. This emulator uses the rule with 3 cycles (`CLK_STOP_DELAY_CYCLES` in `core/src/clk.h`). It gives `03D903D9`, `021F0067`, `00650295`, and `029300DB`, the same pattern as real hardware.
+
+**Mode 12 (`C`), the RTC request.** This mode does not write `CLK control`, and it needs no button after the press of DOWN that starts it. It takes approximately 1.5 seconds. It masks each source, then it follows the RTC line in the status register (`0200`), which is high for half of each second and low for the other half. Each row is the hold register (the high 4 digits) and the status register (the low 4 digits), approximately 10 ms after its step:
+
+| row | step |
+|---|---|
+| 1 | the line is low, then an acknowledge of the RTC |
+| 2 | the next rising edge of the line |
+| 3 | an acknowledge of the RTC, with the line still high |
+| 4 | the next falling edge of the line |
+
+`0200` in the hold half shows an RTC request. Row 1 shows if an acknowledge clears the request. Row 2 shows if the rising edge sets it. Row 3 shows if an acknowledge clears it while the line is high, and its status half shows if the acknowledge also clears the line bit. Row 4 shows if the falling edge sets the request. If row 3 shows no `0200` in the status half, the mode does not see the falling edge, and row 4 is not at an edge. `FFFFFFFF` is a row that the mode did not get to, because the line did not change in approximately 4 seconds. The code of this mode is in the first block, after each routine of that block, because the second block is full. This emulator gives `00800008`, `02800200`, `00800000`, and `00800000`. In this emulator, an acknowledge clears the line bit, thus row 4 is not at an edge. The `0008` in row 1 is DOWN, which is still down.
 
 **Mode 5, the hold bit of a held button.** This mode does not write `CLK control`. **Press DOWN, and keep it down for approximately 2 seconds, then release it.** That press starts the mode, and the mode reads the interrupt controller while DOWN is still down. It masks each source, thus no interrupt occurs. Each row is the hold register (the high 4 digits) and the status register (the low 4 digits). DOWN is `0008` in each register.
 

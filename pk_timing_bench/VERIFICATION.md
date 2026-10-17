@@ -165,6 +165,12 @@ On real hardware, the read after 1 `MOV` occurs before the stop, and the reads a
 
 On real hardware, only the read after 2 `MOV`s in WRAM occurs before the stop. Of the three rules in [README.md](README.md), only the rule with 3 cycles gives that result. With the cycle costs of this emulator, that rule also gives each result of modes 0, 1, 2, 6, 7, and 10: after the store, the CPU starts the next instruction only while fewer than 3 cycles have passed since the store. This emulator uses that rule (`CLK_STOP_DELAY_CYCLES` in `core/src/clk.h`), and it gives the same result.
 
+**Mode 12, the RTC request.** Each row is the hold register (high) and the status register (low). Row 1 is after an acknowledge of the RTC with the line low, row 2 is after the next rising edge, row 3 is after an acknowledge with the line high, and row 4 is after the next falling edge. No real-hardware run yet.
+
+| Source | Row 1 | Row 2 | Row 3 | Row 4 | Date |
+|---|---|---|---|---|---|
+| This emulator | `0x00800008` | `0x02800200` | `0x00800000` | `0x00800000` | 2026-10-17 |
+
 **Mode 5, the hold bit of a held button.** Each row is the hold register (high) and the status register (low). Row 1 is at the start, with DOWN down. Row 2 is after the mask of each source and an acknowledge of DOWN. Row 3 is approximately 10 ms later. Row 4 is after the release of DOWN.
 
 | Source | Row 1 | Row 2 | Row 3 | Row 4 | Date |

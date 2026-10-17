@@ -31,7 +31,9 @@ SECTIONS
     . = 0x02000388;
     .thumb_loop : { KEEP(*(.thumb_loop)) }
 
-    .text : ALIGN(4) { *(.text) }
+    /* .block1_tail holds code that the second block has no space for. It follows each .text
+     * section, thus each routine of the first block keeps its address. */
+    .text : ALIGN(4) { *(.text) *(.block1_tail) }
 
     ASSERT(. <= 0x02002000, "the first 8KB block of pk_timing_bench is full")
 

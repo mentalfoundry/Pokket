@@ -1663,6 +1663,7 @@ draw_stop_rows:
 @   9  stop_test_release    the hold bit of a button after a release with no acknowledge
 @  10  stop_test_window     four stops, with 1, 2, 3, and 4 MOVs before one read of Timer1
 @  11  stop_test_wram       four stops: three from WRAM, and one with a MOV of 3 cycles
+@  12  stop_test_rtc        the RTC request at each edge of the RTC line, with each source masked
 @ -> r1 = 1 if this function used a press, and 0 if not. Keeps r0 and r4 to r11.
     .global stop_buttons
 stop_buttons:
@@ -1712,6 +1713,7 @@ stop_modes:
     .word stop_test_release     @ 9
     .word stop_test_window      @ 10
     .word stop_test_wram        @ 11
+    .word stop_test_rtc         @ 12
 
 @ The masked mode of screen 13. It is the same as stop_test_phased, but Timer1 stays masked. Only
 @ ACTION is unmasked, for the wake, and its handler acknowledges only the buttons. Thus each Timer1
@@ -1770,6 +1772,7 @@ stop_rows:
     .word WRAM_STOP_M9
     .word WRAM_STOP_M10
     .word WRAM_STOP_M11
+    .word WRAM_STOP_M12
 
     .global stop_test_masked
 stop_test_masked:
@@ -2604,6 +2607,76 @@ stop_irq_handler:
     rsb r3, r3, #3                      @ the first goes to byte 2, the second to byte 1
     strb r0, [r1, r3]
 9:  pop {r0, r1, r2, r3, pc}
+    .ltorg
+
+@ Mode 12. It does not stop the CPU. It is in the first block, because the second block is full.
+@ Each source is masked, and the mode reads the RTC request (bit 9 of the hold register) at each
+@ edge of the RTC line (bit 9 of the status register). Each row is the hold register (bits 16 to
+@ 31) and the status register (bits 0 to 15), approximately 10 ms after its step:
+@   Row 1: the line is low, after an acknowledge of the RTC.
+@   Row 2: after the next rising edge of the line.
+@   Row 3: the line is still high, after an acknowledge of the RTC.
+@   Row 4: after the next falling edge of the line.
+@ FFFFFFFF is a row that the mode did not get to, because the line did not change in approximately
+@ 4 seconds. Each source stays masked at the end, the same as after the other modes.
+    .section .block1_tail, "ax"
+    .global stop_test_rtc
+stop_test_rtc:
+    push {r4, r5, r6, lr}
+    ldr r4, =INTC_BASE
+    ldr r5, =WRAM_STOP_M12
+    mvn r0, #0
+    str r0, [r5]                        @ each row: not done yet
+    str r0, [r5, #4]
+    str r0, [r5, #8]
+    str r0, [r5, #12]
+    str r0, [r4, #0xC]                  @ mask each source
+
+    mov r0, #0                          @ row 1: the line low, then an acknowledge
+    bl rtc_wait_level
+    beq 9f
+    mov r1, #INT_RTC_BIT
+    str r1, [r4, #0x10]
+    bl held_delay
+    bl held_sample
+    str r0, [r5]
+
+    mov r0, #INT_RTC_BIT                @ row 2: the rising edge
+    bl rtc_wait_level
+    beq 9f
+    bl held_delay
+    bl held_sample
+    str r0, [r5, #4]
+
+    mov r1, #INT_RTC_BIT                @ row 3: an acknowledge with the line high
+    str r1, [r4, #0x10]
+    bl held_delay
+    bl held_sample
+    str r0, [r5, #8]
+
+    mov r0, #0                          @ row 4: the falling edge
+    bl rtc_wait_level
+    beq 9f
+    bl held_delay
+    bl held_sample
+    str r0, [r5, #12]
+9:  pop {r4, r5, r6, lr}
+    bx lr
+
+@ r0 = the RTC bit of the status register to wait for (0 or INT_RTC_BIT), r4 = INTC_BASE.
+@ -> Z clear when the bit has that value, Z set after approximately 4 seconds with no change.
+@ Uses r1 and r2.
+rtc_wait_level:
+    ldr r2, =0x00100000
+1:  ldr r1, [r4, #4]
+    and r1, r1, #INT_RTC_BIT
+    cmp r1, r0
+    beq 2f
+    subs r2, r2, #1
+    bne 1b
+    bx lr                               @ Z is set: no change
+2:  movs r1, #1                         @ Z is clear
+    bx lr
     .ltorg
 
 @ The third block, only in a build with BLOCKS=3 (see the Makefile). It holds the target of probe 10,
