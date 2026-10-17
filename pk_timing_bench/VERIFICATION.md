@@ -343,7 +343,7 @@ This emulator agrees with each real-hardware value of screens 19 to 28. The timi
 
 ## Screen 29: the probe of a misaligned write to R15
 
-See "Screen 29" in [README.md](README.md) for the meaning of each probe and each row. **Real hardware:** 2026-10-16, a J-110 BIOS. Each probe ran one time.
+See "Screen 29" in [README.md](README.md) for the meaning of each probe and each row. **Real hardware:** 2026-10-16, a J-110 BIOS. Each probe ran one time. The first table uses the build of two blocks, which was the default build before 2026-10-18. In that build, probes 10 and 11 access the first address after the app. The second table gives probes 10 to 13 in the build of three blocks, which is now the only build.
 
 Probes 6 to 9, E, and 11 give values that depend on the addresses of the code in the build. Real hardware ran those probes on two earlier builds: probes 0 to D on the build before probes E to 11, and probes E to 11 on the build before probes 12 and 13. **This emulator** gives the values below for those same builds, after the corrections of the CPU core. The committed build gives different values for these probes, on real hardware and in this emulator. For example, in the committed build, probes 6 to 9 stop at the undefined target of probe E, which comes after their target.
 
@@ -383,9 +383,9 @@ Probes 6 to 9, E, and 11 give values that depend on the addresses of the code in
 | 21 (Supervisor mode: mode 03 written to the CPSR) | `21010000 60000093 60000093 60000093` | the same |
 | 22 (writes to COUNT of Timer2) | `22010000 00000555 00007FFF 00007FFF` | the same |
 
-The same unit, with a build of three blocks (`make BLOCKS=3`), on 2026-10-16. In that build, `0x02004000` is a target in the third block: `MOV r1,PC`, and then `BX r3`.
+The same unit, with a build of three blocks, on 2026-10-16. In that build, `0x02004000` is a target in the third block: `MOV r1,PC`, and then `BX r3`.
 
-| probe | real hardware, `BLOCKS=3` | this emulator, `BLOCKS=3` |
+| probe | real hardware, three blocks | this emulator, three blocks |
 |---|---|---|
 | 10 (aligned `MOV PC` to `0x02004000`) | `10010000 00000008 00000000 00000000` | the same |
 | 11 (`LDR` at `0x02004000`) | `11010000 E1A0E1A0 E1A0100F E12FFF13` | the same |

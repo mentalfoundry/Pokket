@@ -18,8 +18,8 @@ _header_start:
                                  @ this project's own build (this byte was
                                  @ already 0x11 in both, unchanged).
     .byte BLOCKS                @ 0x03: block count. It holds how many 8KB blocks this
-                                 @ save occupies. The Makefile gives BLOCKS. The
-                                 @ default is two blocks (see pack.c).
+                                 @ save occupies. The Makefile gives BLOCKS, which
+                                 @ is three blocks.
                                  @
                                  @ NOT reserved, which is what this byte was
                                  @ previously assumed to be and why it was left

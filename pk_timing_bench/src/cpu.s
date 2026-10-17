@@ -726,8 +726,8 @@ und_thumb_insn:
 @   9  BX with bit 0 clear, the same.        D  BX with bit 0 clear, the same.
 @   E  the fetch rule: MOV PC to a FLASH1 target + 2, with probe_fetch_pad at the target.
 @   F  the same, with the target in WRAM.
-@  10  MOV PC to 0x02004000, with R15 aligned. In the default build of 2 blocks, that is the first
-@      address after the app. In a build with BLOCKS=3, it is block3_target in the third block.
+@  10  MOV PC to 0x02004000, with R15 aligned. That is block3_target, at the start of the third
+@      block.
 @  11  LDR from 0x02004000 + 2, + 0, and + 4, the same as probe 3.
 @  12  MOV PC to 0x02006000, with R15 aligned. That is after the app in both builds.
 @  13  LDR from 0x02006000, the same as probe 11.
@@ -938,43 +938,6 @@ probe_set_slot:
     movne r6, #1
     bx lr
 
-probe_table:
-    .word probe_aligned         @ 0
-    .word probe_undefined       @ 1
-    .word probe_watchdog        @ 2
-    .word probe_data_flash      @ 3
-    .word probe_data_bios       @ 4
-    .word probe_data_wram       @ 5
-    .word probe_mov_flash       @ 6
-    .word probe_ldr_flash       @ 7
-    .word probe_ldm_flash       @ 8
-    .word probe_bx_flash        @ 9
-    .word probe_mov_wram        @ A
-    .word probe_ldr_wram        @ B
-    .word probe_ldm_wram        @ C
-    .word probe_bx_wram         @ D
-    .word probe_fetch_flash     @ E
-    .word probe_fetch_wram      @ F
-    .word probe_after_app       @ 10
-    .word probe_data_after_app  @ 11
-    .word probe_after_block3    @ 12
-    .word probe_data_after_block3 @ 13
-    .word probe_msr_space       @ 14
-    .word probe_msr_shifts      @ 15
-    .word probe_msr_other       @ 16
-    .word probe_bx_f150         @ 17
-    .word probe_bx_ff30         @ 18
-    .word probe_bx_0010         @ 19
-    .word probe_bx_ff70         @ 1A
-    .word probe_priv_1b         @ 1B
-    .word probe_priv_1c         @ 1C
-    .word probe_bx_0f10         @ 1D
-    .word probe_bx_af10         @ 1E
-    .word probe_msr_bit4        @ 1F
-    .word probe_priv_20         @ 20
-    .word probe_priv_21         @ 21
-    .word probe_count_write     @ 22
-
 probe_aligned:
     ldr r4, =probe_pad + 4
     mov r2, r4
@@ -1089,8 +1052,8 @@ probe_fetch:                    @ r4 = the aligned target
     cmp r0, #0                  @ Z = 0 and C = 1
     mov pc, r2
 
-@ Probe 10: an aligned fetch at 0x02004000. With BLOCKS=3, block3_target is at that address, and the
-@ probe returns with row 2 = 8.
+@ Probe 10: an aligned fetch at 0x02004000. block3_target is at that address, and the probe returns
+@ with row 2 = 8.
 probe_after_app:
     ldr r4, =0x02004000
     mov r2, r4
@@ -2679,12 +2642,50 @@ rtc_wait_level:
     bx lr
     .ltorg
 
-@ The third block, only in a build with BLOCKS=3 (see the Makefile). It holds the target of probe 10,
-@ at 0x02004000. The target is the same as at probe_pad + 4: MOV r1,PC, and then BX r3.
-    .if BLOCKS >= 3
+@ The third block. It starts with the target of probe 10, at 0x02004000. The target is the same as at
+@ probe_pad + 4: MOV r1,PC, and then BX r3. The code that the first two blocks have no space for
+@ follows it.
     .section .block3, "ax"
     .arm
 block3_target:
     .word 0xE1A0100F            @ mov r1, pc
     .word 0xE12FFF13            @ bx r3
-    .endif
+
+@ The routine of each probe of screen 29. probe_run reads it.
+    .align 2
+probe_table:
+    .word probe_aligned         @ 0
+    .word probe_undefined       @ 1
+    .word probe_watchdog        @ 2
+    .word probe_data_flash      @ 3
+    .word probe_data_bios       @ 4
+    .word probe_data_wram       @ 5
+    .word probe_mov_flash       @ 6
+    .word probe_ldr_flash       @ 7
+    .word probe_ldm_flash       @ 8
+    .word probe_bx_flash        @ 9
+    .word probe_mov_wram        @ A
+    .word probe_ldr_wram        @ B
+    .word probe_ldm_wram        @ C
+    .word probe_bx_wram         @ D
+    .word probe_fetch_flash     @ E
+    .word probe_fetch_wram      @ F
+    .word probe_after_app       @ 10
+    .word probe_data_after_app  @ 11
+    .word probe_after_block3    @ 12
+    .word probe_data_after_block3 @ 13
+    .word probe_msr_space       @ 14
+    .word probe_msr_shifts      @ 15
+    .word probe_msr_other       @ 16
+    .word probe_bx_f150         @ 17
+    .word probe_bx_ff30         @ 18
+    .word probe_bx_0010         @ 19
+    .word probe_bx_ff70         @ 1A
+    .word probe_priv_1b         @ 1B
+    .word probe_priv_1c         @ 1C
+    .word probe_bx_0f10         @ 1D
+    .word probe_bx_af10         @ 1E
+    .word probe_msr_bit4        @ 1F
+    .word probe_priv_20         @ 20
+    .word probe_priv_21         @ 21
+    .word probe_count_write     @ 22

@@ -32,13 +32,13 @@ This build needs the [GNU Arm Embedded Toolchain](https://developer.arm.com/down
 make
 ```
 
-`make` writes `pk_timing_bench.mcs` into this directory. The file is 16512 bytes. It holds a real PS1 single-save directory frame, and a PSX Title Sector app of two 8KB blocks. The first block holds screens 1 to 18. The second block holds only the code of screens 19 to 29 (`src/cpu.s`). Thus each measurement routine of the first block has the same address as in the build of one block. Load it with any frontend of this project, through `psemu_load_content`. The memory-card-loading pipeline of a real PocketStation also loads it.
+`make` writes `pk_timing_bench.mcs` into this directory. The file is 24704 bytes. It holds a real PS1 single-save directory frame, and a PSX Title Sector app of three 8KB blocks. The first block holds screens 1 to 18. The second block holds only the code of screens 19 to 29 (`src/cpu.s`). Thus each measurement routine of the first block has the same address as in the build of one block. The third block starts with the target of probe 10 on screen 29, and it then holds the code that the first two blocks have no space for. Load it with any frontend of this project, through `psemu_load_content`. The memory-card-loading pipeline of a real PocketStation also loads it.
 
 **Link the objects in the exact `$(OBJS)` order of the Makefile** (`header icon mirrors font thumb_loop start helpers experiments ui`). Do not pass `src/*.o` to the toolchain by hand. The shell expands that pattern alphabetically. It then links `experiments.o` first, and it pushes `_start` several hundred bytes further into `.text`. The fixed-offset sections in [`link.ld`](link.ld) still land correctly, and the entry-point word at body `0x5C` still points at the real `_start`. Thus the build is successful, and the app operates. But the layout of that image is very different from the layout that `make` gives. Thus a byte comparison against a known-good build is not possible. `_start` must come immediately after `.thumb_loop`.
 
 This build needs no Python, and it needs no assembler-specific scripting. The real ARM source and Thumb source are in [`src/`](src/), as editable GNU-syntax assembly. [`link.ld`](link.ld) puts each piece at the exact body offset that the runtime logic needs. [`pack.c`](pack.c) is the only code that is not assembly. It puts the assembled and linked binary into the PS1 directory-frame header. If the toolchain binaries are not on `PATH`, give `AS`, `LD`, `OBJCOPY`, or `CC` on the `make` command line.
 
-`make BLOCKS=3` makes an app of three blocks. The third block holds only the target of probe 10 on screen 29. Probes 10 to 13 then show if the abort of an access in FLASH1 occurs at the end of the app, or at a fixed address. Do `make clean` before a change of `BLOCKS`. The prebuilt file is the default build of two blocks.
+Probes 10 to 13 on screen 29 show that the abort of an access in FLASH1 occurs at the end of the app (`0x02006000`), and not at a fixed address. Before 2026-10-18, the default build had two blocks. [VERIFICATION.md](VERIFICATION.md) gives the results of both builds.
 
 This directory already holds a prebuilt `pk_timing_bench.mcs`. The toolchain is necessary only for a change to the source.
 
@@ -556,7 +556,7 @@ This screen runs nothing when it is drawn. **UP** selects the next probe, and **
 | A to D | probes 6 to 9, with the target in WRAM | the same |
 | E | the fetch rule: `MOV PC` to a FLASH1 target + 2, where each fetch rule executes a different instruction. See `probe_fetch_pad` in `src/cpu.s` | a trap. Row 2 and row 4 identify the rule |
 | F | the same, with the target in WRAM | the same |
-| 10 | `MOV PC` to `0x02004000`, with R15 aligned. In the default build, that is the first address after the app. In a build with `BLOCKS=3`, it is a target in the third block | row 2: 8 with `BLOCKS=3` |
+| 10 | `MOV PC` to `0x02004000`, with R15 aligned. That is a target at the start of the third block | row 2: 8 |
 | 11 | `LDR` at `0x02004000` + 2, + 0, and + 4, the same as probe 3 | the same as probe 3 |
 | 12 | `MOV PC` to `0x02006000`, with R15 aligned. That is after the app in both builds | row 2: 0 |
 | 13 | `LDR` at `0x02006000`, the same as probe 11 | the same as probe 3 |

@@ -44,7 +44,8 @@ SECTIONS
 
     ASSERT(. <= 0x02004000, "the second 8KB block of pk_timing_bench is full")
 
-    /* A build with BLOCKS=3 has a third block. It holds only the target of probe 10 (cpu.s). */
+    /* The third block holds the target of probe 10 at its start (cpu.s), and then the code that
+     * the first two blocks have no space for. */
     . = 0x02004000;
     .block3 : { KEEP(*(.block3)) }
 

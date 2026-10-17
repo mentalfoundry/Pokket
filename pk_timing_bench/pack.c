@@ -11,7 +11,7 @@
 
 /* The number of 8KB blocks. The Makefile gives it with -DBLOCKS. */
 #ifndef BLOCKS
-#define BLOCKS 2
+#define BLOCKS 3
 #endif
 #define BLOCK_SIZE 0x2000u
 #define BODY_SIZE (BLOCKS * BLOCK_SIZE)
