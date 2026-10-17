@@ -237,7 +237,7 @@ The two rows use different divisors deliberately. A running pulse is a full seco
 
 ### Screen 13: does bit 0 of CLK control (0x0B000004) stop the CPU?
 
-Each other screen here reports a number that it measured at startup. This screen is interactive. **UP selects the next mode, and DOWN runs the selected mode.** The digit after the `D` at the top is the selected mode. Mode 0 is the stop test that the paragraphs below describe. The measured quantity is the time that the CPU stayed stopped. On a device with no other input, only a button press from a person ends that time.
+Each other screen here reports a number that it measured at startup. This screen is interactive. **UP selects the next mode, and DOWN runs the selected mode.** The digit after the `D` at the top is the selected mode, in hex: mode 10 shows `A`. Mode 0 is the stop test that the paragraphs below describe. The measured quantity is the time that the CPU stayed stopped. On a device with no other input, only a button press from a person ends that time.
 
 **The reason for this screen.** A real commercial app arms an idle timer. When that timer expires and no button is down, the app writes `1` to this register. That write is the last step of a power-down sequence. The earlier steps turn the sound off, mask the RTC interrupt, and turn the display off. Real hardware sleeps at that point, which a test confirms: the screen blanks, and a button press brings it back. But *that this register is the register that stops the CPU* was an inference from the writes next to it. This screen tests the write alone, with no other part of that sequence. No quantity of tracing of the real app can give that separation. See "CLK control" in [docs/hardware-notes.md](../docs/hardware-notes.md).
 
@@ -245,7 +245,7 @@ Each other screen here reports a number that it measured at startup. This screen
 
 **What it does.** It registers an interrupt handler. It arms Timer1 slowly, at approximately 8Hz. It unmasks the buttons and Timer1. It draws a solid bar across the middle of the screen. It then makes one 32-bit store of `1` to `0x0B000004`. Each step after that store runs only when the CPU runs again. This screen leaves the LCD **on** deliberately, which is different from the sequence of the real app. Thus the result is readable. The handler counts the Timer1 interrupts before the store and after the store separately. See `stop_test_phased` in [`src/cpu.s`](src/cpu.s).
 
-**The modes.** Each mode keeps its rows, and the screen shows the rows of the selected mode. Modes 0 to 4, 6, and 7 arm Timer1 the same way, draw the same bar, and make the same store.
+**The modes.** Each mode keeps its rows, and the screen shows the rows of the selected mode. Modes 0 to 4, 6, 7, and 10 arm Timer1 the same way, draw the same bar, and make the same store.
 
 | mode | function in [`src/cpu.s`](src/cpu.s) | unmasked | rows |
 |---|---|---|---|
@@ -258,6 +258,8 @@ Each other screen here reports a number that it measured at startup. This screen
 | 6 | `stop_test_instr` | ACTION | the same as mode 2, with a `MOV` of 1 cycle after the store |
 | 7 | `stop_test_instr` | ACTION | the same as mode 2, with 16 `MOV`s after the store |
 | 8 | `stop_test_unmask` | DOWN, then none | the hold bit of a held button after a mask with no acknowledge. This mode does not stop the CPU. |
+| 9 | `stop_test_release` | DOWN | the hold bit of a button after a release with no acknowledge. This mode does not stop the CPU. |
+| 10 (`A`) | `stop_test_window` | ACTION | four stops, with 1, 2, 3, and 4 `MOV`s before one read of Timer1 |
 
 **Mode 1, the masked mode.** Timer1 stays masked, and the handler acknowledges only the buttons. Thus a Timer1 request stays in the hold register of the interrupt controller, and the screen reads it. Each of the four rows is one sample, in the form `CH00NNNN`: `C` is the Timer1 control (`6` = /512 and enabled), `H` is the Timer1 bit of the hold register (`1` = a request), and `NNNN` is the Timer1 count. Row 1 is before the test changes Timer1, row 2 is immediately after the arm and an acknowledge, row 3 is immediately before the store, and row 4 is immediately after the wake. This emulator gives `0000035B`, `600003E7`, `600003DB`, and `600003DA`: no request at any sample.
 
@@ -277,6 +279,19 @@ Each other screen here reports a number that it measured at startup. This screen
 | 4 | the hold register and the status register, approximately 10 ms after the release of DOWN |
 
 If the hold bit of a held button is its live level AND its enable bit, the mask clears it: the low half of row 2 and the hold half of row 3 do not show `0008`. If the hold bit is a latch, they show `0008`. Row 4 shows if a latch stays set after the release. Row 3 must show `0008` in the status half. If not, DOWN was released too early. This emulator gives `00800008`, `FFFFFFFF`, `00800008`, and `02800200`: no interrupt occurs, because this emulator records one request at the press, and the acknowledge clears it.
+
+**Mode 9, a release with no acknowledge.** This mode does not write `CLK control`. **Press DOWN, and keep it down for approximately 2 seconds, then release it**, the same as mode 5. The mode masks each source and acknowledges the buttons, then it unmasks only DOWN. Its IRQ callback counts each call, and it never acknowledges DOWN. In each call after the release of DOWN, it masks DOWN.
+
+| row | meaning |
+|---|---|
+| 1 | the hold register and the status register, after the mask of each source and the acknowledge |
+| 2 | the number of calls of the callback |
+| 3 | the hold register and the status register, in the first call after the release. `FFFFFFFF` if no call occurs after the release. |
+| 4 | the hold register and the status register, approximately 10 ms after the release |
+
+If the hold bit of a button is its level AND its enable bit, the interrupts stop at the release by themselves: row 3 is `FFFFFFFF`, or it shows no `0008` in the hold half. If the hold bit is a latch, the interrupts continue after the release, and row 3 shows `0008` in the hold half. This emulator gives `00800008`, `00000000`, `FFFFFFFF`, and `02800200`: no call, because this emulator records one request at the press, and the acknowledge clears it.
+
+**Mode 10 (`A`), the time from the store to the stop.** The same as mode 2, but the mode makes four stops, and each one needs a press of ACTION. **Hold ACTION for approximately half a second at each wake.** The digits `1` to `4` at the top show each stop that started. Rows 1 to 4 are the stops with 1, 2, 3, and 4 `MOV`s between the store and one read of Timer1. Each row is the count before the store (the high 4 digits) and the count of the read (the low 4 digits). If the two halves are equal, or 1 apart, the read occurred before the stop. If they are different by more, the read occurred after the wake. The first row with a read after the wake gives the number of `MOV`s that the time from the store to the stop does not cover. This emulator gives halves that are equal or 1 apart in each row, because Timer1 does not count while ACTION stays down in this emulator.
 
 **Mode 5, the hold bit of a held button.** This mode does not write `CLK control`. **Press DOWN, and keep it down for approximately 2 seconds, then release it.** That press starts the mode, and the mode reads the interrupt controller while DOWN is still down. It masks each source, thus no interrupt occurs. Each row is the hold register (the high 4 digits) and the status register (the low 4 digits). DOWN is `0008` in each register.
 

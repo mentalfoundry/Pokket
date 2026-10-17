@@ -378,7 +378,7 @@
 @ The selected mode of screen 13 (0 to STOP_MODE_COUNT - 1). Up selects the next mode, and Down
 @ runs it. See stop_buttons in cpu.s.
 .equ WRAM_STOP_MODE,         0x694
-.equ STOP_MODE_COUNT,        9
+.equ STOP_MODE_COUNT,        11
 @ 4 words: the four rows of mode 1, the masked mode. See stop_test_masked in cpu.s.
 .equ WRAM_STOP_MASKED,       0x698
 @ 4 words each: the four rows of modes 2, 3, and 4. See stop_test_instr and stop_test_capture.
@@ -396,9 +396,11 @@
 .equ WRAM_CAP_HOLD,          0x6E8
 .equ WRAM_CAP_COUNT,         0x6F0
 .equ WRAM_CAP_PH,            0x6F8
-@ 4 words each: the four rows of modes 7 and 8 of screen 13. See stop_test_instr and
-@ stop_test_unmask in cpu.s. These words are below the app stack, which starts at 0x800 and grows
-@ down. In tools/bench_probe.c runs of screens 13, 14, 15, 27, and 29, the stack does not go below
-@ 0x764.
+@ 4 words each: the four rows of modes 7 to 10 of screen 13. See stop_test_instr,
+@ stop_test_unmask, stop_test_release, and stop_test_window in cpu.s. These words are below the app
+@ stack, which starts at 0x800 and grows down. In tools/bench_probe.c runs of each screen, each
+@ mode of screen 13, and each probe of screen 29, the stack does not go below 0x764.
 .equ WRAM_STOP_M7,           0x700
 .equ WRAM_STOP_M8,           0x710
+.equ WRAM_STOP_M9,           0x720
+.equ WRAM_STOP_M10,          0x730

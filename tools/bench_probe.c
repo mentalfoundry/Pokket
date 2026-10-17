@@ -76,7 +76,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "usage: %s <bios.bin> <app.mcs> [frames] [pages] [probe]\n", argv[0]);
         fprintf(stderr, "  pages: screen number to page to after launch (0 = leave wherever it lands)\n");
         fprintf(stderr, "  probe: with pages = 29, the probe to select and run with Down\n");
-        fprintf(stderr, "         with pages = 13, the mode of screen 13 (0 to 8), which Down runs. ACTION wakes the CPU\n");
+        fprintf(stderr, "         with pages = 13, the mode of screen 13 (0 to 10), which Down runs. ACTION wakes the CPU\n");
         return 1;
     }
     bios = read_file(argv[1], &bios_size);
@@ -168,18 +168,22 @@ int main(int argc, char **argv) {
             psemu_run(ps, 33000u);
         }
         /* On screen 13, Down runs the CLK stop test, and the CPU stays stopped until a button wakes
-           it. Only ACTION wakes it. Wait, then press ACTION. */
+           it. Only ACTION wakes it. Wait, then press ACTION. Mode 10 makes four stops, thus it gets
+           four presses. */
         if (pages == 13) {
-            for (k = 0; k < 400; k++) {
-                psemu_run(ps, 33000u);
-            }
-            for (k = 0; k < 10; k++) {
-                psemu_set_buttons(ps, PSEMU_BUTTON_FIRE);
-                psemu_run(ps, 33000u);
-            }
-            for (k = 0; k < 20; k++) {
-                psemu_set_buttons(ps, 0);
-                psemu_run(ps, 33000u);
+            int stop;
+            for (stop = 0; stop < (probe == 10 ? 4 : 1); stop++) {
+                for (k = 0; k < 400; k++) {
+                    psemu_run(ps, 33000u);
+                }
+                for (k = 0; k < 10; k++) {
+                    psemu_set_buttons(ps, PSEMU_BUTTON_FIRE);
+                    psemu_run(ps, 33000u);
+                }
+                for (k = 0; k < 20; k++) {
+                    psemu_set_buttons(ps, 0);
+                    psemu_run(ps, 33000u);
+                }
             }
             printf("screen13 intc after the run: enable=0x%08X hold=0x%08X\n", psemu_bus_read32(&ps->bus, 0x0A000008u),
                 psemu_bus_read32(&ps->bus, 0x0A000000u));
@@ -196,8 +200,8 @@ int main(int argc, char **argv) {
                     psemu_bus_read32(&ps->bus, base), psemu_bus_read32(&ps->bus, base + 4u),
                     psemu_bus_read32(&ps->bus, base + 8u), psemu_bus_read32(&ps->bus, base + 12u));
             }
-            for (k = 5; k <= 8; k++) {
-                static const uint32_t bases[4] = {0x670u, 0x270u, 0x700u, 0x710u};
+            for (k = 5; k <= 10; k++) {
+                static const uint32_t bases[6] = {0x670u, 0x270u, 0x700u, 0x710u, 0x720u, 0x730u};
                 uint32_t base = bases[k - 5];
                 printf("screen13 mode %d rows @0x%03X: 0x%08X 0x%08X 0x%08X 0x%08X\n", k, base,
                     psemu_bus_read32(&ps->bus, base), psemu_bus_read32(&ps->bus, base + 4u),
