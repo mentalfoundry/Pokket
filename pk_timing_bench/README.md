@@ -63,7 +63,7 @@ This app runs its startup measurements one time, at power-on. A person then page
 
 - **RIGHT**: the next screen
 - **LEFT**: the previous screen
-- The screens wrap around: 1 to 11, then screen 13, then screen 14, then screen 15, then screens 16 to 29, then 1. Thus LEFT from screen 1 goes directly to screen 29. No screen stops the device. See "Screens 19 to 28" below.
+- The screens wrap around, from 1 to 29 and then 1 again. Screen 12 is not in that cycle, on purpose: it is the CONTINUE/EXIT prompt, and only a hold on ACTION opens it. Thus LEFT from screen 1 goes directly to screen 29. No screen stops the device. See "Screens 19 to 28" below.
 - **UP** and **DOWN**, on screen 29 only, select a probe and run it. See "Screen 29" below.
 - **UP** and **DOWN**, on screen 13 only, select a mode of the CLK stop test and run it. That is the one measurement here that does not run at startup, because only a press of ACTION from a person can end it. See "Screen 13" below.
 - **DOWN**, on screen 15 only, arms the COM timing run before the device goes into a memory card slot, and it clears the captures of the run before. **UP**, on screen 15 only, shows the next stored capture after the device comes out. See "Screen 15" below.
