@@ -808,22 +808,20 @@ static void test_intc_status_sources_also_latch_hold(void) {
     assert((ps->intc.hold & INT_BTN_ACTION) != 0u);
     assert((ps->intc.status & INT_BTN_ACTION) != 0u);
 
-    /* A clear operation, for example a button release or the alternating RTC
-       tick, clears both registers. This project tested a different method and
-       a test disproved it. That method made only STATUS follow the
-       de-assertion, and left HOLD latched until an explicit acknowledge. It
-       agreed with the INT_INPUT and INT_LATCH names, and with the explicit
-       acknowledge of the real RTC handler. But the real button-action
-       callback, at address 0x04003784, never acknowledges its bit. Thus a
-       button release left the bit latched permanently, and the CPU entered
-       the IRQ handler again at almost each instruction after one press. A
-       real-BIOS run of 20 million instructions gave 559034 re-entries. A real
-       device that a person can use cannot operate this way. Thus the buttons,
-       and each other source for consistency, clear both hold and status at a
-       release. An acknowledge already clears both registers. */
+    /* The RTC request is a latch (INT_LATCH_MASK). The falling edge of the
+       line clears STATUS, and the request stays until an acknowledge. An
+       acknowledge does not clear STATUS while the line is high
+       (INT_LEVEL_MASK). Screen 13 of pk_timing_bench gives each step on real
+       hardware (modes 8, 9, and 12). */
     intc_set_line(&ps->intc, INT_RTC, 0);
-    assert((ps->intc.hold & INT_RTC) == 0u);
+    assert((ps->intc.hold & INT_RTC) != 0u);
     assert((ps->intc.status & INT_RTC) == 0u);
+    psemu_bus_write32(&ps->bus, PSEMU_INTC_BASE + 0x10, INT_RTC);
+    assert((ps->intc.hold & INT_RTC) == 0u);
+    intc_set_line(&ps->intc, INT_RTC, 1);
+    psemu_bus_write32(&ps->bus, PSEMU_INTC_BASE + 0x10, INT_RTC);
+    assert((ps->intc.hold & INT_RTC) == 0u);
+    assert((ps->intc.status & INT_RTC) != 0u);
 
     psemu_destroy(ps);
     printf("test_intc_status_sources_also_latch_hold OK\n");
@@ -893,12 +891,6 @@ static void test_button_status_survives_acknowledge(void) {
 
     psemu_set_buttons(ps, 0); /* the release clears it */
     assert((ps->intc.status & INT_BTN_ACTION) == 0u);
-
-    /* An acknowledge still clears STATUS for a latched, non-level source. */
-    intc_set_line(&ps->intc, INT_RTC, 1);
-    assert((ps->intc.status & INT_RTC) != 0u);
-    psemu_bus_write32(&ps->bus, PSEMU_INTC_BASE + 0x10, INT_RTC);
-    assert((ps->intc.status & INT_RTC) == 0u);
 
     psemu_destroy(ps);
     printf("test_button_status_survives_acknowledge OK\n");

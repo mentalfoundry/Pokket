@@ -136,8 +136,9 @@ static void intc_set_line_body(intc_t *intc, uint32_t line, int state) {
         intc->hold |= line;
         intc->status |= line & INT_STATUS_MASK;
     } else {
+        /* A source in INT_LATCH_MASK keeps its request until an acknowledge. */
         intc->status &= ~line;
-        intc->hold &= ~line;
+        intc->hold &= ~(line & ~INT_LATCH_MASK);
     }
     /* The HOLD bit of a button follows its level and its ENABLE bit, and it is not a latch. */
     update_buttons(intc);

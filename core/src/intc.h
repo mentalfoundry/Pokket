@@ -94,9 +94,19 @@
    INT_IOP is in this mask for the same reason. Docking is a continuous physical condition. It is not
    an event. A device that stays in the connector stays docked. The kernel acknowledges the source at
    the transition. It then reads the level again to find the new direction. An acknowledge that
-   clears the level makes each dock event read back as an undock event. */
+   clears the level makes each dock event read back as an undock event.
+   INT_RTC is in this mask because real hardware gives it: an acknowledge with the RTC line high
+   does not clear STATUS (mode 12 of screen 13 of pk_timing_bench). */
 #define INT_LEVEL_MASK                                                                                             \
-    (INT_IRDA | INT_IOP | INT_COM | INT_BTN_ACTION | INT_BTN_RIGHT | INT_BTN_LEFT | INT_BTN_DOWN | INT_BTN_UP)
+    (INT_IRDA | INT_IOP | INT_COM | INT_RTC | INT_BTN_ACTION | INT_BTN_RIGHT | INT_BTN_LEFT | INT_BTN_DOWN |       \
+     INT_BTN_UP)
+
+/* The sources whose HOLD request stays when the line goes low, until an acknowledge. Real hardware
+   gives this for INT_RTC on screen 13 of pk_timing_bench: the rising edge sets the request, and the
+   falling edge does not set it (mode 12). The request stays while the line is low, with no
+   acknowledge (modes 8 and 9). An acknowledge clears it, also while the line is high (mode 12). The
+   kernel acknowledges INT_RTC as the first step of its RTC handler. */
+#define INT_LATCH_MASK (INT_RTC)
 
 typedef struct intc {
     uint32_t hold;
