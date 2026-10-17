@@ -66,12 +66,9 @@ This app runs its startup measurements one time, at power-on. A person then page
 - The screens wrap around: 1 to 11, then screen 13, then screen 14, then screen 15, then screens 16 to 29, then 1. Thus LEFT from screen 1 goes directly to screen 29. No screen stops the device. See "Screens 19 to 28" below.
 - **UP** and **DOWN**, on screen 29 only, select a probe and run it. See "Screen 29" below.
 - **UP** and **DOWN**, on screen 13 only, select a mode of the CLK stop test and run it. That is the one measurement here that does not run at startup, because only a press of ACTION from a person can end it. See "Screen 13" below.
-- **DOWN**, on screen 15 only, arms the COM timing run before the device goes into a memory card slot, and it clears the captures of the run before. **UP**, on screen 15 only, shows the next stored capture after the device comes out. Before the device goes into the slot, **ACTION** ends an armed run with no capture. See "Screen 15" below.
-- **A hold on ACTION** opens a CONTINUE/EXIT prompt. That prompt returns to the system without a hardware reset. UP selects CONTINUE, DOWN selects EXIT, and a new ACTION press confirms the selection. See "Screen index used for the continue/exit prompt" in `src/constants.inc`, and `pb_prompt_confirm_exit` in `src/ui.s`, for the full behavior. The hold does not operate in these conditions:
-  - **The run of screen 15 is armed.** The run does not read the buttons until it ends. Before the device goes into the slot, press ACTION one time to end the run, then hold ACTION. After the device goes into the slot, the run ends when the device comes out.
-  - **The CPU is stopped by screen 13.** Press ACTION one time to wake the device, then hold ACTION.
-
-  If nothing operates, the physical reset button of the device starts it again. This app writes no flash, thus a reset loses only the results on the screens.
+- **DOWN**, on screen 15 only, arms the COM timing run before the device goes into a memory card slot, and it clears the captures of the run before. **UP**, on screen 15 only, shows the next stored capture after the device comes out. See "Screen 15" below.
+- **A hold on ACTION** opens a CONTINUE/EXIT prompt. That prompt returns to the system without a hardware reset. UP selects CONTINUE, DOWN selects EXIT, and a new ACTION press confirms the selection. See "Screen index used for the continue/exit prompt" in `src/constants.inc`, and `pb_prompt_confirm_exit` in `src/ui.s`, for the full behavior. Screens 13 and 15 each have one condition in which the hold does not operate. See those screens below.
+- **The physical reset button** starts the device again if nothing else operates. This app writes no flash, thus a reset loses only the results on the screens.
 
 ## What each screen shows
 
@@ -344,7 +341,7 @@ The `0008` digit of the hold register in row 3 shows if the request of a held bu
 
 This emulator gives `00000002`, `02810001`, `03DB03DA`, and `00010001` in mode 3, and `00020002`, `02880008`, `03E703E7`, and `00000000` in mode 4. `tools/bench_probe.c` holds each button for approximately 0.3 seconds, thus Timer1 counts two interrupts for each press. An interrupt before the store shows its source in row 2, and the Timer1 count at that time in row 3.
 
-**Press ACTION to wake the device.** LEFT, RIGHT, UP, and DOWN do not wake it, also with their interrupts enabled. See "CLK control" in [docs/hardware-notes.md](../docs/hardware-notes.md).
+**Press ACTION to wake the device.** LEFT, RIGHT, UP, and DOWN do not wake it, also with their interrupts enabled. See "CLK control" in [docs/hardware-notes.md](../docs/hardware-notes.md). While the CPU is stopped, a hold on ACTION does not open the exit prompt. Press ACTION one time to wake the device, then hold ACTION.
 
 **What appears.** If the clock really stops, the bar is the last thing that this screen draws, and it stays on the screen until a button press. If the store does nothing, the result screen replaces the bar too fast to see.
 
@@ -389,7 +386,7 @@ This screen is interactive, like screen 13. **The memory card slot covers the bu
 **How to run it.**
 
 1. Start the app with the device out of the slot. Go to screen 15 (LEFT from screen 1).
-2. Press DOWN. A bar appears across the middle of the screen. The app now waits for the docking level, and it needs no more buttons. To end the run before the device goes into the slot, press ACTION.
+2. Press DOWN. A bar appears across the middle of the screen. The app now waits for the docking level, and it needs no more buttons. The armed run does not read the buttons until it ends, thus a hold on ACTION does not open the exit prompt. To end the run before the device goes into the slot, press ACTION one time. After the device goes into the slot, the run ends when the device comes out.
 3. Turn the PS1 on and go to its memory card screen, which reads the slot again and again. A controller in the same port also makes transfers, because the controller and the card share the select line of the port.
 4. Put the device in the memory card slot. Wait approximately 15 seconds. The app makes 8 captures, and it shows each one as it makes it.
 5. Take the device out of the slot **before** you turn the PS1 off. The screen shows capture 0. Press UP for the next capture.
