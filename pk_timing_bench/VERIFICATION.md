@@ -138,11 +138,14 @@ The CPU stops before the first data read after the store. Thus the stop does not
 
 On real hardware, the unmask of the held DOWN gives an interrupt, and the hold register has DOWN at the entry of the callback. The mask of DOWN removes DOWN from the hold register immediately, with no acknowledge, and DOWN stays absent while it stays down. The requests of Timer0 and the RTC (`0280`) stay in the hold register while they are masked. In this emulator, the acknowledge before the unmask clears the request of the press, and no interrupt occurs.
 
-**Mode 9, a release with no acknowledge.** Row 1 is after the mask of each source and an acknowledge of the buttons, with DOWN down. Row 2 is the number of calls of the callback. Row 3 is the first call after the release of DOWN (`FFFFFFFF`: none). Row 4 is approximately 10 ms after the release. No real-hardware run yet.
+**Mode 9, a release with no acknowledge.** Row 1 is after the mask of each source and an acknowledge of the buttons, with DOWN down. Row 2 is the number of calls of the callback. Row 3 is the first call after the release of DOWN (`FFFFFFFF`: none). Row 4 is approximately 10 ms after the release.
 
 | Source | Row 1 | Row 2 | Row 3 | Row 4 | Date |
 |---|---|---|---|---|---|
+| Real hardware, DOWN down for approximately 2 seconds | `0x02800008` | `0x000142F0` | `0x02800000` | `0x02800000` | 2026-10-17 |
 | This emulator | `0x00800008` | `0x00000000` | `0xFFFFFFFF` | `0x02800200` | 2026-10-17 |
+
+On real hardware, the callback runs 82672 times while DOWN stays down, with no acknowledge. In the call after the release, DOWN is absent from the hold register, and DOWN is still unmasked. Thus the release removes the request with no acknowledge.
 
 **Mode 10, four stops with 1 to 4 `MOV`s before one read.** Each row is the count before the store (high) and the count of the read (low). Equal halves, or halves 1 apart, show a read before the stop. No real-hardware run yet.
 
