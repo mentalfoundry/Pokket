@@ -59,14 +59,11 @@ To change the icon, edit or replace `assets/card_icon.bmp`. Then build again. Th
 
 ## Controls
 
-This app runs its startup measurements one time, at power-on. A person then pages through the result screens by hand. Screens 13 and 15 are the exceptions. They are interactive, and they operate on demand.
+This app runs its startup measurements one time, at power-on. A person then pages through the result screens by hand. Screens 13, 15, and 29 also use UP and DOWN. Each of those screens gives its own buttons below.
 
 - **RIGHT**: the next screen
 - **LEFT**: the previous screen
 - The screens wrap around, from 1 to 29 and then 1 again. Screen 12 is not in that cycle, on purpose: it is the CONTINUE/EXIT prompt, and only a hold on ACTION opens it. Thus LEFT from screen 1 goes directly to screen 29. No screen stops the device. See "Screens 19 to 28" below.
-- **UP** and **DOWN**, on screen 29 only, select a probe and run it. See "Screen 29" below.
-- **UP** and **DOWN**, on screen 13 only, select a mode of the CLK stop test and run it. That is the one measurement here that does not run at startup, because only a press of ACTION from a person can end it. See "Screen 13" below.
-- **DOWN**, on screen 15 only, arms the COM timing run before the device goes into a memory card slot, and it clears the captures of the run before. **UP**, on screen 15 only, shows the next stored capture after the device comes out. See "Screen 15" below.
 - **A hold on ACTION** opens a CONTINUE/EXIT prompt. That prompt returns to the system without a hardware reset. UP selects CONTINUE, DOWN selects EXIT, and a new ACTION press confirms the selection. See "Screen index used for the continue/exit prompt" in `src/constants.inc`, and `pb_prompt_confirm_exit` in `src/ui.s`, for the full behavior. Screens 13 and 15 each have one condition in which the hold does not operate. See those screens below.
 - **The physical reset button** starts the device again if nothing else operates. This app writes no flash, thus a reset loses only the results on the screens.
 
