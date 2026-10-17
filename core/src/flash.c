@@ -337,18 +337,18 @@ static uint32_t flash_resolve_physical_bank(const flash_t *flash, uint32_t virtu
             return p;
         }
     }
-    /* No F_BANK_VAL entry selects this virtual slot. The reset value of
-       the register is 0 for each physical bank, which agrees with the
-       reset state of real hardware. Thus this code treats the enabled
-       physical blocks as one
-       contiguous group, which starts at the enabled block with the
-       lowest number.
+    /* No enabled block has this virtual slot in F_BANK_VAL. This code then
+       treats the enabled physical blocks as one contiguous group, which
+       starts at the enabled block with the lowest number.
 
-       A disassembly confirms this: the app-selection routine (see
-       "App-selection and dispatch" in docs/app-notes.md) writes only
-       F_BANK_FLG. It never writes F_BANK_VAL. This fallback keeps usual
-       multi-block app dispatch and execution correct, for each tested
-       condition. */
+       The kernel writes F_BANK_VAL before each map (see "App selection and
+       dispatch" in docs/app-notes.md). Thus with the real kernel, this
+       code operates only for a slot that the app does not fill, for
+       example an access after the end of the app. For an app with
+       contiguous blocks, the result is a block that F_BANK_FLG does not
+       enable, thus the access aborts (see flash1_mapped). For an app with
+       blocks that are not contiguous, the result can be an enabled block
+       of the app. No test on real hardware covers that condition. */
     for (p = 0; p < FLASH_BANK_VAL_COUNT; p++) {
         if (flash->bank_mask & (1u << p)) {
             lowest = p;
@@ -427,13 +427,15 @@ uint8_t flash_ctrl_read8(flash_t *flash, uint32_t offset) {
         reg = flash->bank_mask;
     } else if (word_index == 0u) {
         /* On real hardware, +0 is a write-command and read-status
-           register. It is not a simple mirror. A real BIOS routine writes
-           a command here. It then waits for bit 0 of this same address to
-           read back as 1 ("ready"). The bank commit of this emulator
-           always completes immediately, thus bit 0 is always ready after
-           a write. The raw command value is not sufficient: bit 0 of the
-           observed command (2) is 0, and the app launch then stops in
-           that loop. */
+           register. It is not a simple mirror. The kernel routine at
+           0x04002DA8 maps the blocks of an app, writes 2 here, reads this
+           address one time, and then loops with no exit unless bit 0 is 1.
+           The kernel runs that routine on its own screens before an app
+           starts: 46 times in a boot and a launch of pk_timing_bench. The
+           launch routine at 0x040019E0 writes 2 and does not read. The
+           bank commit of this emulator always completes immediately, thus
+           bit 0 is always 1 after a write. The raw command value is not
+           sufficient, because bit 0 of 2 is 0. */
         reg = flash->last_command | 1u;
     } else if (word_index == 4u) {
         /* +0x10 (F_WAIT2): the flash-write routine of a real app reads bit
