@@ -412,11 +412,10 @@ void psemu_format_hardware_id(uint32_t id, char *buf, size_t buf_size) {
 }
 
 void psemu_set_buttons(psemu_t *ps, uint32_t buttons) {
-    /* Real hardware asserts the interrupt line of a button at each press edge and each
-       release edge (see docs/hardware-notes.md). Real hardware does not use a polled
-       level for this function.
-       This code converts the PSEMU_BUTTON_* bits of this emulator to the real
-       INT_BTN_* bits.
+    /* Each change of a button changes its live level in STATUS. The HOLD bit of a button is that
+       level AND its ENABLE bit (see INT_BUTTON_MASK in intc.h), thus a held button with an unmasked
+       interrupt keeps its request for the full time that the user holds it.
+       This code converts the PSEMU_BUTTON_* bits of this emulator to the real INT_BTN_* bits.
        PSEMU_BUTTON_* is a convention of this emulator. It is not the bit layout of real
        hardware. */
     static const struct {
@@ -435,21 +434,6 @@ void psemu_set_buttons(psemu_t *ps, uint32_t buttons) {
     for (i = 0; i < sizeof(button_map) / sizeof(button_map[0]); i++) {
         if (changed & button_map[i].psemu_bit) {
             intc_set_line(&ps->intc, button_map[i].int_bit, (buttons & button_map[i].psemu_bit) != 0);
-        } else if (buttons & button_map[i].psemu_bit) {
-            /* The user still holds the button, thus this call has no new edge.
-               HOLD must pulse only at the press edge.
-               HOLD must not stay latched as a continuous level for the full time that
-               the user holds the button.
-
-               A difference from real hardware confirms this. The general system-tick
-               callback tests `hold & INT_BTN_ACTION` before its RTC test. A hold bit
-               that stays set permanently prevents the RTC redraw path, for the full
-               time that the user holds the button. Real hardware continues to redraw
-               and blink while the user holds the button. It acts only at release.
-
-               This code does not change STATUS. STATUS continues to follow the live
-               level, for code that reads the register directly. */
-            intc_clear_hold_only(&ps->intc, button_map[i].int_bit);
         }
     }
     ps->buttons = buttons;

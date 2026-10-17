@@ -829,54 +829,50 @@ static void test_intc_status_sources_also_latch_hold(void) {
     printf("test_intc_status_sources_also_latch_hold OK\n");
 }
 
-static void test_button_hold_pulses_not_sustained(void) {
+static void test_button_hold_is_level_and_enable(void) {
     psemu_t *ps = make_arm_cpu();
+    const uint32_t enable = PSEMU_INTC_BASE + 0x8, mask = PSEMU_INTC_BASE + 0xC, ack = PSEMU_INTC_BASE + 0x10;
 
-    /* A real, confirmed fault that a direct test on real hardware found. On
-       the real device, a held Action button does nothing: an item that blinks
-       continues to blink normally. Only a release confirms the selection. But
-       the button HOLD bit of this emulator stayed latched as a continuous
-       level for the full time of the hold. A real BIOS callback tests
-       `hold & INT_BTN_ACTION` *before* its RTC redraw test. Thus a hold bit
-       that stays set permanently prevented that redraw path while the user
-       held the button. A watchpoint during execution confirmed this: the
-       RTC blink counter did not change during a long hold. The correction:
-       HOLD pulses only at the press edge. For a button that the user still
-       holds, the next psemu_set_buttons call with no new edge clears HOLD
-       again. That call does not clear STATUS, which continues to follow the
-       live level. */
-    ps->intc.enable |= INT_BTN_ACTION;
+    /* The HOLD bit of a button is the button level AND its ENABLE bit. It is not a latch. Each step
+       is one result of screen 13 of pk_timing_bench on real hardware (see INT_BUTTON_MASK in
+       intc.h). */
+    psemu_set_buttons(ps, PSEMU_BUTTON_DOWN); /* a press with the interrupt masked: no request (mode 5) */
+    assert((ps->intc.hold & INT_BTN_DOWN) == 0u);
+    assert((ps->intc.status & INT_BTN_DOWN) != 0u);
+    psemu_bus_write32(&ps->bus, ack, INT_BTN_DOWN);
+    assert((ps->intc.hold & INT_BTN_DOWN) == 0u);
 
-    psemu_set_buttons(ps, PSEMU_BUTTON_FIRE); /* press edge */
-    assert((ps->intc.hold & INT_BTN_ACTION) != 0u);
-    assert((ps->intc.status & INT_BTN_ACTION) != 0u);
+    psemu_bus_write32(&ps->bus, enable, INT_BTN_DOWN); /* the unmask of a held button: a request (mode 8) */
+    assert((ps->intc.hold & INT_BTN_DOWN) != 0u);
+    assert(intc_irq_asserted(&ps->intc));
+    psemu_bus_write32(&ps->bus, ack, INT_BTN_DOWN); /* the request comes back after an acknowledge (mode 4) */
+    assert((ps->intc.hold & INT_BTN_DOWN) != 0u);
+    assert(intc_irq_asserted(&ps->intc));
 
-    psemu_set_buttons(ps, PSEMU_BUTTON_FIRE); /* still held, no edge */
-    assert((ps->intc.hold & INT_BTN_ACTION) == 0u);
-    assert((ps->intc.status & INT_BTN_ACTION) != 0u); /* status still reflects the live level */
+    psemu_bus_write32(&ps->bus, mask, INT_BTN_DOWN); /* a mask with no acknowledge removes it (mode 8) */
+    assert((ps->intc.hold & INT_BTN_DOWN) == 0u);
+    assert((ps->intc.status & INT_BTN_DOWN) != 0u);
+    assert(!intc_irq_asserted(&ps->intc));
 
-    psemu_set_buttons(ps, 0); /* release */
-    assert((ps->intc.hold & INT_BTN_ACTION) == 0u);
-    assert((ps->intc.status & INT_BTN_ACTION) == 0u);
+    psemu_bus_write32(&ps->bus, enable, INT_BTN_DOWN);
+    assert((ps->intc.hold & INT_BTN_DOWN) != 0u);
+    psemu_set_buttons(ps, 0); /* a release with no acknowledge removes it (mode 9) */
+    assert((ps->intc.hold & INT_BTN_DOWN) == 0u);
+    assert((ps->intc.status & INT_BTN_DOWN) == 0u);
+    assert(!intc_irq_asserted(&ps->intc));
 
     psemu_destroy(ps);
-    printf("test_button_hold_pulses_not_sustained OK\n");
+    printf("test_button_hold_is_level_and_enable OK\n");
 }
 
 static void test_button_status_survives_acknowledge(void) {
     psemu_t *ps = make_arm_cpu();
 
     /* docs/hardware-notes.md, "Buttons": `status` follows the live button
-       level, for code that reads the register directly. An acknowledge clears
-       a latched interrupt REQUEST, thus it must clear HOLD. It must not clear
-       that live level.
-
-       This test failed before. The buttons were absent from INT_LEVEL_MASK,
-       thus each acknowledge cleared their STATUS bit. A button that the user
-       still held then read back as released, until something pressed the
-       button again. The real BIOS acknowledges the button interrupts during
-       its boot sequence. Thus an app that read STATUS for a held button saw
-       nothing.
+       level, for code that reads the register directly. An acknowledge does
+       not clear that level. The BIOS acknowledges the button interrupts
+       during its boot sequence, and an app that reads STATUS for a held
+       button must still see it.
 
        A real app depends on this behavior: pk_timing_bench opens its exit
        prompt after 75000 sequential reads of STATUS with Action held. It then
@@ -884,18 +880,18 @@ static void test_button_status_survives_acknowledge(void) {
        exits. */
     ps->intc.enable |= INT_BTN_ACTION;
 
-    psemu_set_buttons(ps, PSEMU_BUTTON_FIRE); /* press edge */
+    psemu_set_buttons(ps, PSEMU_BUTTON_FIRE); /* press */
     assert((ps->intc.hold & INT_BTN_ACTION) != 0u);
     assert((ps->intc.status & INT_BTN_ACTION) != 0u);
 
     psemu_bus_write32(&ps->bus, PSEMU_INTC_BASE + 0x10, INT_BTN_ACTION); /* acknowledge */
-    assert((ps->intc.hold & INT_BTN_ACTION) == 0u);   /* the request is cleared */
-    assert((ps->intc.status & INT_BTN_ACTION) != 0u); /* the live level is not */
+    assert((ps->intc.hold & INT_BTN_ACTION) != 0u);   /* held and unmasked: the request stays */
+    assert((ps->intc.status & INT_BTN_ACTION) != 0u); /* the live level stays */
 
-    psemu_set_buttons(ps, PSEMU_BUTTON_FIRE); /* still held, no new edge */
+    psemu_set_buttons(ps, PSEMU_BUTTON_FIRE); /* still held */
     assert((ps->intc.status & INT_BTN_ACTION) != 0u);
 
-    psemu_set_buttons(ps, 0); /* release finally clears it */
+    psemu_set_buttons(ps, 0); /* the release clears it */
     assert((ps->intc.status & INT_BTN_ACTION) == 0u);
 
     /* An acknowledge still clears STATUS for a latched, non-level source. */
@@ -3390,7 +3386,7 @@ int main(void) {
     test_faulted_cpu_stops_advancing();
     test_crash_report_contents();
     test_intc_status_sources_also_latch_hold();
-    test_button_hold_pulses_not_sustained();
+    test_button_hold_is_level_and_enable();
     test_button_status_survives_acknowledge();
     test_timer_and_irq();
     test_fiq_delivery_and_priority();

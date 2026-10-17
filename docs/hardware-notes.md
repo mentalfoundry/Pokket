@@ -165,13 +165,22 @@ Neither fault occurs in this emulator: `lcd_mode_write8` and `lcd_write8` (`core
 
 There are 5 face buttons (Up, Right, Down, Left, and Fire), and one physical reset button. The face buttons read as bits 0 to 4 of `INT_INPUT`, at `0x0A000004`.
 
-The `hold` bit of a button is a momentary edge pulse for each physical press. It is not a continuous level for the full time that a user holds the button. This behavior is different from the behavior of a level-triggered source, for example the IOP, the battery, or a timer. The `hold` bit of such a source stays set while its condition continues.
+**The `hold` bit of a button is the button level AND its `enable` bit.** It is not a latch, and an acknowledge does not change it. Screen 13 of `pk_timing_bench` measures each part of this rule on real hardware (see `pk_timing_bench/VERIFICATION.md`):
 
-This difference is important for the system-tick callback of the BIOS. That callback is a chain with a fixed priority: the IOP, then the battery, then Timer1, then Action (the buttons), and then the RTC. The chain gets to the RTC redraw step only if no earlier bit is set in `hold`. If the Action bit stays asserted while a user holds a button, that bit permanently prevents the RTC processing for that time.
+| condition | the request of the button | mode of screen 13 |
+|---|---|---|
+| held, interrupt masked | none, at the press and after an acknowledge | 5 (two runs) |
+| held, interrupt unmasked | present, and present again immediately after each acknowledge | 3 and 4 |
+| held, then masked, with no acknowledge | removed immediately | 8 |
+| released, interrupt unmasked, with no acknowledge | removed immediately | 9 |
 
-`status` still follows the live button level, for code that reads the register directly.
+Thus, while a button stays down and its interrupt is unmasked, the IRQ line stays asserted, and the CPU executes only the interrupt handler until the release. In mode 9, the IRQ callback runs 82672 times while DOWN stays down for approximately 2 seconds. In modes 0 and 3, Timer1 counts one interrupt for each 128 ms that ACTION stays down after a wake, and the code of the mode runs again at the release.
 
-`intc_clear_hold_only` (`core/src/intc.c`) does this operation. `psemu_set_buttons` calls it when a button stays held and there is no new press edge. See `test_button_hold_pulses_not_sustained`.
+The other sources are different. A masked Timer0 and a masked RTC record a request, and the request stays until an acknowledge (mode 5).
+
+`status` follows the live button level, for code that reads the register directly. An acknowledge does not clear it.
+
+`update_buttons` (`core/src/intc.c`) sets the `hold` bits of the buttons after each change of `status`, `enable`, or `hold`. See `INT_BUTTON_MASK` in `core/src/intc.h`, and `test_button_hold_is_level_and_enable`.
 
 The button input uses the interrupt (`hold`) path and the callback path. It does not use a direct read of `status`.
 
@@ -1048,7 +1057,6 @@ A real homebrew ID editor never calls `SWI 0Fh` in its code. A full scan of its 
 
 ## Known open questions and unconfirmed behavior
 
-- **Open: the request of a held button.** On real hardware, while a button stays down and its interrupt is unmasked, its request comes back after each acknowledge. Thus the CPU executes only the interrupt handler until the release (modes 0, 3, and 4 of screen 13 of `pk_timing_bench`). This emulator raises one request at the press (see "Buttons"). While a button stays down and its interrupt is masked, its request does not occur, at the press or after an acknowledge (mode 5, two runs). A mask of a held button with an unmasked interrupt removes its request immediately, with no acknowledge (mode 8). A masked Timer0 and a masked RTC do record a request, and it stays until an acknowledge. The release of a button with an unmasked interrupt removes its request, with no acknowledge (mode 9). Thus, in each measured condition, the request of a button is the button level AND its enable bit, and it is not a latch. This emulator records one request at the press, also when the interrupt is masked, and an acknowledge clears it.
 - **Open: the instructions after a clock stop.** On real hardware, the CPU executes the instruction after the store to `CLK control` before it stops (see "CLK control"). This emulator stops before that instruction. The number of instructions is not fixed: one `LDR` executes in mode 2, and a `MOV` and an `LDR` execute in mode 6. The stop does not wait for a data read: the CPU stops during 16 `MOV`s in mode 7. In mode 10, the read after 1 `MOV` occurs before the stop, and the reads after 2, 3, and 4 `MOV`s occur after it. In mode 11, the read after 2 `MOV`s in WRAM occurs before the stop, and the reads after 3 and 4 `MOV`s in WRAM, and after one `MOV` of 3 cycles in FLASH, occur after it. With the cycle costs of this emulator, one rule gives each of these results: after the store, the CPU starts the next instruction only while fewer than 3 cycles have passed since the store. The rule depends on those cycle costs, thus it is a property of this cost model and of the hardware together.
 - **The event-screen stop in the serial-carrying app, from a counter overflow: this cause is not fully confirmed.** A real, repeatable CPU fault occurred: a branch to an incorrect address from an old `LR` value, into the second half of a Thumb `BL` instruction. A trace found the cause: a call to the command dispatcher with a value that is out of range (`0x200`). That value comes from a small counter in RAM, at `0x332`. That counter is in the private user-RAM state of the app; it is not a kernel structure. Code decreases that counter one step at a time, and the expected range is `0` to `0x13`.
 

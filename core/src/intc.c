@@ -72,6 +72,12 @@ static void accumulate_byte(uint32_t *scratch, uint32_t shift, uint8_t value) {
     *scratch = (*scratch & ~(0xFFu << shift)) | ((uint32_t)value << shift);
 }
 
+/* Sets the HOLD bits of the buttons to the button level AND the ENABLE bit. Each change of STATUS,
+   ENABLE, or HOLD calls it. See INT_BUTTON_MASK in intc.h. */
+static void update_buttons(intc_t *intc) {
+    intc->hold = (intc->hold & ~INT_BUTTON_MASK) | (intc->status & intc->enable & INT_BUTTON_MASK);
+}
+
 static void intc_write8_body(intc_t *intc, uint32_t offset, uint8_t value) {
     uint32_t word_index = offset / 4u;
     uint32_t shift = (offset % 4u) * 8u;
@@ -110,6 +116,7 @@ static void intc_write8_body(intc_t *intc, uint32_t offset, uint8_t value) {
         }
         break;
     }
+    update_buttons(intc);
 }
 
 static void intc_set_line_body(intc_t *intc, uint32_t line, int state) {
@@ -129,27 +136,20 @@ static void intc_set_line_body(intc_t *intc, uint32_t line, int state) {
         intc->hold |= line;
         intc->status |= line & INT_STATUS_MASK;
     } else {
-        /* The buttons clear `hold` at release, the same as `status`. The real button-action
-           callback, at 0x04003784, never acknowledges bit 0. Thus a `hold` that stays set after a
-           release makes the CPU enter the IRQ handler again at almost each instruction.
-           Only the real RTC handler also sends an acknowledge.
-           This has no effect either way, because an acknowledge already clears `hold` and
-           `status`. */
         intc->status &= ~line;
         intc->hold &= ~line;
     }
+    /* The HOLD bit of a button follows its level and its ENABLE bit, and it is not a latch. */
+    update_buttons(intc);
 }
 
 uint32_t intc_get_line(intc_t *intc, uint32_t line) {
     return intc->status & line;
 }
 
-static void intc_clear_hold_only_body(intc_t *intc, uint32_t line) {
-    intc->hold &= ~line;
-}
-
 static void intc_clear_status_only_body(intc_t *intc, uint32_t line) {
     intc->status &= ~line;
+    update_buttons(intc);
 }
 
 static void intc_set_level_and_pulse_body(intc_t *intc, uint32_t line, int level) {
@@ -164,6 +164,7 @@ static void intc_set_level_and_pulse_body(intc_t *intc, uint32_t line, int level
     } else {
         intc->status &= ~line;
     }
+    update_buttons(intc);
 }
 
 int intc_irq_asserted(intc_t *intc) {
@@ -187,14 +188,6 @@ void intc_write8(intc_t *intc, uint32_t offset, uint8_t value) {
 void intc_set_line(intc_t *intc, uint32_t line, int state) {
     uint32_t hold = intc->hold, status = intc->status, enable = intc->enable;
     intc_set_line_body(intc, line, state);
-    if (intc->hold != hold || intc->status != status || intc->enable != enable) {
-        intc->changes++;
-    }
-}
-
-void intc_clear_hold_only(intc_t *intc, uint32_t line) {
-    uint32_t hold = intc->hold, status = intc->status, enable = intc->enable;
-    intc_clear_hold_only_body(intc, line);
     if (intc->hold != hold || intc->status != status || intc->enable != enable) {
         intc->changes++;
     }

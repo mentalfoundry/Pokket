@@ -18,8 +18,10 @@
    - mask (+0xC): a write ANDs the applicable bits out of enable.
    - acknowledge (+0x10): write-only. It clears the applicable bits from hold and from status.
 
-   Each asserted source latches into HOLD. ENABLE gates HOLD, and HOLD then operates the IRQ line and
-   the FIQ line of the CPU.
+   Each asserted source other than a button latches into HOLD. ENABLE gates HOLD, and HOLD then
+   operates the IRQ line and the FIQ line of the CPU.
+   The HOLD bit of a button is not a latch. It is the button level AND the ENABLE bit of the button,
+   at each time. See INT_BUTTON_MASK.
    Button presses and the RTC tick (the bits in INT_STATUS_MASK) also latch into STATUS.
    STATUS lets code read a source directly, with no effect on the interrupt-delivery state. The RTC
    wait-for-pulse loop is one example.
@@ -41,6 +43,18 @@
 #define INT_IOP 0x00000800u
 #define INT_IRDA 0x00001000u
 #define INT_TIMER2 0x00002000u
+/* The buttons. The HOLD bit of a button is the live button level (STATUS) AND its ENABLE bit. Real
+   hardware gives this in each condition that screen 13 of pk_timing_bench measures:
+   - A button that stays down with its interrupt masked gives no request, at the press or after an
+     acknowledge (mode 5).
+   - A button that stays down with its interrupt unmasked gives a request again immediately after
+     each acknowledge (modes 3 and 4). Thus the CPU executes only the interrupt handler until the
+     release (modes 0 and 3).
+   - A mask of a button that stays down removes its request, with no acknowledge (mode 8).
+   - A release removes the request, with no acknowledge, also with the interrupt unmasked (mode 9).
+   A masked Timer0 and a masked RTC do record a request (mode 5), thus only the buttons have this
+   rule. */
+#define INT_BUTTON_MASK (INT_BTN_ACTION | INT_BTN_RIGHT | INT_BTN_LEFT | INT_BTN_DOWN | INT_BTN_UP)
 #define INT_IRQ_MASK 0x00001FBFu
 #define INT_FIQ_MASK 0x00002040u
 /* The sources whose live signal level STATUS shows.
@@ -72,10 +86,8 @@
    `status` follows the live button level for code that reads the register directly. If an
    acknowledge clears that level, a button that the user still holds reads back as released, until
    the next press.
-   The confirmed real-hardware finding about buttons applies to HOLD, not to STATUS. HOLD is a
-   momentary edge pulse for each press. intc_clear_hold_only and psemu_set_buttons do this, and
-   test_button_hold_pulses_not_sustained tests it. That finding gives no data about STATUS, and this
-   mask does not change it.
+   The HOLD bit of a button follows STATUS AND ENABLE (see INT_BUTTON_MASK). Thus an acknowledge
+   does not clear it either while the button stays down and its interrupt is unmasked.
    A real app depends on the live level. pk_timing_bench holds Action to open its exit prompt, and
    counts 75000 sequential reads of STATUS to detect the hold. Only a level that continues after an
    acknowledge can accumulate that count.
@@ -121,20 +133,6 @@ extern int psemu_intc_trace_enabled;
 void intc_set_line(intc_t *intc, uint32_t line, int state);
 uint32_t intc_get_line(intc_t *intc, uint32_t line);
 
-/* Clears `line` from HOLD only. It does not change STATUS.
-   Use this function for sources whose HOLD pulse must show only the initial edge, and not a
-   continuous level.
-
-   See psemu_set_buttons in psemu.c for the reason that buttons need this function.
-   A real BIOS callback uses `hold` to select the source to service.
-   If the hold bit of a held button never clears, that button permanently starves each other source
-   that the callback tests later in the same chain.
-
-   A difference from real hardware confirms this: the button-action branch is before the RTC test in
-   the callback. A hold bit that stays set blocks the RTC redraw operations while the user holds the
-   button. Real hardware continues to redraw the screen, and acts only at button release. */
-void intc_clear_hold_only(intc_t *intc, uint32_t line);
-
 /* Follows the live signal level of `line` in STATUS.
    It also latches an interrupt request in HOLD at each call, for both level directions.
    IR receive needs this exact division of function, and intc_set_line cannot give it.
@@ -145,7 +143,6 @@ void intc_clear_hold_only(intc_t *intc, uint32_t line);
 void intc_set_level_and_pulse(intc_t *intc, uint32_t line, int level);
 
 /* Clears `line` from STATUS only. It does not change HOLD.
-   intc_clear_hold_only does the inverse.
    Use it for a source whose signal goes away before software sends an acknowledge for its latched
    request. The level must go, and the request must stay.
    See ir_tick in ir.c for the source that needs this function. */
