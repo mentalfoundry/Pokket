@@ -77,6 +77,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "  pages: screen number to page to after launch (0 = leave wherever it lands)\n");
         fprintf(stderr, "  probe: with pages = 29, the probe to select and run with Down\n");
         fprintf(stderr, "         with pages = 13, the mode of screen 13 (0 to 12), which Down runs. ACTION wakes the CPU\n");
+        fprintf(stderr, "         with pages = 15, any value: Down arms the run, and ACTION ends it before a dock\n");
         return 1;
     }
     bios = read_file(argv[1], &bios_size);
@@ -166,6 +167,22 @@ int main(int argc, char **argv) {
         for (k = 0; k < 20; k++) {
             psemu_set_buttons(ps, 0);
             psemu_run(ps, 33000u);
+        }
+        /* On screen 15, Down arms the COM run, and the run waits for the docking level. This tool
+           does not dock the device. Thus it presses ACTION, which ends the run before a dock, and it
+           prints the PC before and after that press. */
+        if (pages == 15) {
+            printf("screen15 armed: pc=0x%08X\n", ps->cpu.r[15]);
+            for (k = 0; k < 10; k++) {
+                psemu_set_buttons(ps, PSEMU_BUTTON_FIRE);
+                psemu_run(ps, 33000u);
+            }
+            for (k = 0; k < 20; k++) {
+                psemu_set_buttons(ps, 0);
+                psemu_run(ps, 33000u);
+            }
+            printf("screen15 after ACTION: pc=0x%08X screen=%u\n", ps->cpu.r[15],
+                psemu_bus_read32(&ps->bus, 0x25Cu));
         }
         /* On screen 13, Down runs the CLK stop test, and the CPU stays stopped until a button wakes
            it. Only ACTION wakes it. Wait, then press ACTION. Modes 10 and 11 make four stops, thus they

@@ -1092,7 +1092,8 @@ clc_change:
 @ for capture 6, and 2 for capture 7. It keeps each one in WRAM_COM_TABLE. A capture that no access
 @ came to is made again, for as long as the device stays in the slot. The run
 @ ends when the device leaves the slot, and the screen then shows capture 0.
-@ UP then shows the next capture.
+@ UP then shows the next capture. Before the device goes into the slot, a
+@ press of ACTION ends the run with no capture (see car_not_docked).
 
     .global com_auto_run
 com_auto_run:
@@ -1110,7 +1111,7 @@ car_clear:
 car_wait_dock:
     ldr r0, [r4]
     tst r0, #INT_IOP_BIT
-    beq car_wait_dock
+    beq car_not_docked
     ldr r0, =COM_DOCK_SETTLE           @ the connector bounces for a short time
 car_settle:
     subs r0, r0, #1
@@ -1204,3 +1205,15 @@ cle_loop:
     pop {lr}
     bx lr
     .ltorg
+
+@ The wait of com_auto_run for the docking level, when the device is not in the
+@ slot. r0 = INTC STATUS. A press of ACTION ends the run with no capture, thus
+@ an armed run that never goes into the slot does not need a reset. The slot
+@ covers the buttons, thus this is the only time that a button can end the run.
+@ This code is in the tail of the first block, thus each routine of that block
+@ keeps its address.
+    .section .block1_tail, "ax"
+car_not_docked:
+    tst r0, #1                         @ ACTION
+    beq car_wait_dock
+    b car_done

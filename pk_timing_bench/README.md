@@ -20,6 +20,8 @@ This app started with two questions about the memory-timing table in `core/src/m
 
 Those answers corrected `core/src/memory.c`, `timer.c`, `rtc.c`, and `clk.c` in this emulator. Each correction is a real behavior difference, and not a tuning value.
 
+**While this app runs, the device does not answer the PS1.** The first instruction of the app masks each interrupt source, and the kernel answers the PS1 only from the interrupt of the COM block. Thus a PS1 sees no memory card in the slot while this app runs, on each screen. A launch from the PS1 side, with the BU command `59h`, starts the app, but the device stops its answers when the app starts. To give the link back to the kernel, leave the app.
+
 [VERIFICATION.md](VERIFICATION.md) records the confirmed real-hardware value of each screen, next to the value that this emulator gives. Use it to compare a different unit, or a different emulator, against a known-good result. See the "Memory access timing" section in [docs/hardware-notes.md](../docs/hardware-notes.md), and [docs/app-notes.md](../docs/app-notes.md), for the full writeup of the memory-timing result. "Other real-hardware findings" below gives the results that are not screen values.
 
 ## Building
@@ -64,8 +66,13 @@ This app runs its startup measurements one time, at power-on. A person then page
 - The screens wrap around: 1 to 11, then screen 13, then screen 14, then screen 15, then screens 16 to 29, then 1. Thus LEFT from screen 1 goes directly to screen 29. No screen stops the device. See "Screens 19 to 28" below.
 - **UP** and **DOWN**, on screen 29 only, select a probe and run it. See "Screen 29" below.
 - **UP** and **DOWN**, on screen 13 only, select a mode of the CLK stop test and run it. That is the one measurement here that does not run at startup, because only a press of ACTION from a person can end it. See "Screen 13" below.
-- **DOWN**, on screen 15 only, arms the COM timing run before the device goes into a memory card slot, and it clears the captures of the run before. **UP**, on screen 15 only, shows the next stored capture after the device comes out. See "Screen 15" below.
-- **A hold on ACTION** opens a CONTINUE/EXIT prompt. That prompt returns to the system without a hardware reset. UP selects CONTINUE, DOWN selects EXIT, and a new ACTION press confirms the selection. See "Screen index used for the continue/exit prompt" in `src/constants.inc`, and `pb_prompt_confirm_exit` in `src/ui.s`, for the full behavior.
+- **DOWN**, on screen 15 only, arms the COM timing run before the device goes into a memory card slot, and it clears the captures of the run before. **UP**, on screen 15 only, shows the next stored capture after the device comes out. Before the device goes into the slot, **ACTION** ends an armed run with no capture. See "Screen 15" below.
+- **A hold on ACTION** opens a CONTINUE/EXIT prompt. That prompt returns to the system without a hardware reset. UP selects CONTINUE, DOWN selects EXIT, and a new ACTION press confirms the selection. See "Screen index used for the continue/exit prompt" in `src/constants.inc`, and `pb_prompt_confirm_exit` in `src/ui.s`, for the full behavior. The hold does not operate in these conditions:
+  - **The device is in a memory card slot.** The slot covers the buttons. Take the device out first.
+  - **The run of screen 15 is armed.** The run does not read the buttons until it ends. Before the device goes into the slot, press ACTION one time to end the run, then hold ACTION. After the device goes into the slot, the run ends when the device comes out.
+  - **The CPU is stopped by screen 13.** Press ACTION one time to wake the device, then hold ACTION.
+
+  If nothing operates, the physical reset button of the device starts it again. This app writes no flash, thus a reset loses only the results on the screens.
 
 ## What each screen shows
 
@@ -383,7 +390,7 @@ This screen is interactive, like screen 13. **The memory card slot covers the bu
 **How to run it.**
 
 1. Start the app with the device out of the slot. Go to screen 15 (LEFT from screen 1).
-2. Press DOWN. A bar appears across the middle of the screen. The app now waits for the docking level, and it needs no more buttons.
+2. Press DOWN. A bar appears across the middle of the screen. The app now waits for the docking level, and it needs no more buttons. To end the run before the device goes into the slot, press ACTION.
 3. Turn the PS1 on and go to its memory card screen, which reads the slot again and again. A controller in the same port also makes transfers, because the controller and the card share the select line of the port.
 4. Put the device in the memory card slot. Wait approximately 15 seconds. The app makes 8 captures, and it shows each one as it makes it.
 5. Take the device out of the slot **before** you turn the PS1 off. The screen shows capture 0. Press UP for the next capture.
