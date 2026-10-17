@@ -134,18 +134,18 @@ The CPU stops before the first data read after the store. Thus the stop does not
 | Source | Row 1 | Row 2 | Row 3 | Row 4 | Date |
 |---|---|---|---|---|---|
 | Real hardware | `0x02800008` | `0x02880280` | `0x02800008` | `0x02800200` | 2026-10-17 |
-| This emulator | `0x00800008` | `0x00880080` | `0x00800008` | `0x02800200` | 2026-10-17 |
+| This emulator | `0x02800008` | `0x02880280` | `0x02800008` | `0x02800200` | 2026-10-17 |
 
-On real hardware, the unmask of the held DOWN gives an interrupt, and the hold register has DOWN at the entry of the callback. The mask of DOWN removes DOWN from the hold register immediately, with no acknowledge, and DOWN stays absent while it stays down. The requests of Timer0 and the RTC (`0280`) stay in the hold register while they are masked. This emulator gives the same result, except for the RTC bit (`0200`) of the hold register.
+On real hardware, the unmask of the held DOWN gives an interrupt, and the hold register has DOWN at the entry of the callback. The mask of DOWN removes DOWN from the hold register immediately, with no acknowledge, and DOWN stays absent while it stays down. The requests of Timer0 and the RTC (`0280`) stay in the hold register while they are masked. This emulator gives the same result.
 
 **Mode 9, a release with no acknowledge.** Row 1 is after the mask of each source and an acknowledge of the buttons, with DOWN down. Row 2 is the number of calls of the callback. Row 3 is the first call after the release of DOWN (`FFFFFFFF`: none). Row 4 is approximately 10 ms after the release.
 
 | Source | Row 1 | Row 2 | Row 3 | Row 4 | Date |
 |---|---|---|---|---|---|
 | Real hardware, DOWN down for approximately 2 seconds | `0x02800008` | `0x000142F0` | `0x02800000` | `0x02800000` | 2026-10-17 |
-| This emulator, DOWN down for approximately 0.3 seconds | `0x00800008` | `0x00002A6D` | `0x00800000` | `0x02800200` | 2026-10-17 |
+| This emulator, DOWN down for approximately 0.3 seconds | `0x02800008` | `0x00002A6C` | `0xFFFFFFFF` | `0x02800200` | 2026-10-17 |
 
-On real hardware, the callback runs 82672 times while DOWN stays down, with no acknowledge. In the call after the release, DOWN is absent from the hold register, and DOWN is still unmasked. Thus the release removes the request with no acknowledge. This emulator gives the same result, except for the number of calls, which follows the time that DOWN stays down, and the RTC bit of the hold register.
+On real hardware, the callback runs 82672 times while DOWN stays down, with no acknowledge. In the call after the release, DOWN is absent from the hold register, and DOWN is still unmasked. Thus the release removes the request with no acknowledge. This emulator gives the same result, except for the number of calls, which follows the time that DOWN stays down. In this emulator, no call occurs after the release, thus row 3 is `FFFFFFFF`.
 
 **Mode 10, four stops with 1 to 4 `MOV`s before one read.** Each row is the count before the store (high) and the count of the read (low). Equal halves, or halves 1 apart, show a read before the stop.
 
@@ -170,9 +170,9 @@ On real hardware, only the read after 2 `MOV`s in WRAM occurs before the stop. O
 | Source | Row 1 | Row 2 | Row 3 | Row 4 | Date |
 |---|---|---|---|---|---|
 | Real hardware | `0x00800008` | `0x02800200` | `0x00800200` | `0x00800000` | 2026-10-17 |
-| This emulator | `0x00800008` | `0x02800200` | `0x00800000` | `0x00800000` | 2026-10-17 |
+| This emulator | `0x00800008` | `0x02800200` | `0x00800200` | `0x00800000` | 2026-10-17 |
 
-On real hardware, an acknowledge clears the RTC request, the rising edge of the line sets it, and the falling edge does not set it. An acknowledge with the line high clears the request, and the request does not come back while the line stays high. That acknowledge does not clear the line bit of the status register. In modes 8 and 9, the RTC request stays in the hold register while the line is low, with no acknowledge. Thus the request is a latch that the rising edge sets and that only an acknowledge clears. In this emulator, the acknowledge clears the line bit, and the falling edge clears the request.
+On real hardware, an acknowledge clears the RTC request, the rising edge of the line sets it, and the falling edge does not set it. An acknowledge with the line high clears the request, and the request does not come back while the line stays high. That acknowledge does not clear the line bit of the status register. In modes 8 and 9, the RTC request stays in the hold register while the line is low, with no acknowledge. Thus the request is a latch that the rising edge sets and that only an acknowledge clears. This emulator gives the same result (`INT_LATCH_MASK` and `INT_LEVEL_MASK` in `core/src/intc.h`).
 
 **Mode 5, the hold bit of a held button.** Each row is the hold register (high) and the status register (low). Row 1 is at the start, with DOWN down. Row 2 is after the mask of each source and an acknowledge of DOWN. Row 3 is approximately 10 ms later. Row 4 is after the release of DOWN.
 
@@ -180,7 +180,7 @@ On real hardware, an acknowledge clears the RTC request, the rising edge of the 
 |---|---|---|---|---|---|
 | Real hardware, immediately after mode 6 | `0x02800208` | `0x02800208` | `0x02800208` | `0x02800200` | 2026-10-17 |
 | Real hardware, after a new start of the app | `0x02800208` | `0x02800208` | `0x02800208` | `0x02800200` | 2026-10-17 |
-| This emulator | `0x00800008` | `0x00800008` | `0x00800008` | `0x02800200` | 2026-10-17 |
+| This emulator | `0x02800008` | `0x02800008` | `0x02800008` | `0x02800200` | 2026-10-17 |
 
 Each source is masked at the start of both real runs. Mode 6 masks and acknowledges each source at its end, and the startup measurements mask each source. `tools/bench_probe.c` shows an enable register of `0x00000000` at the start of mode 5 in both conditions. On real hardware, DOWN stays down in rows 1 to 3, and its request does not occur, at the press or after an acknowledge. The requests of Timer0 and the RTC (`0280`) occur after the acknowledge at the end of mode 6, with each source masked. Thus a masked Timer0 and a masked RTC record a request, and a masked button that stays down does not. This emulator gives the same result for DOWN.
 
@@ -192,7 +192,7 @@ Each source is masked at the start of both real runs. Mode 6 masks and acknowled
 | Real hardware, mode 4, a short press of ACTION | `0x00010001` | `0x02880008` | `0x03E703E7` | `0x00000000` | 2026-10-16 |
 | Real hardware, mode 3, ACTION down for approximately 3 seconds | `0x0000001D` | `0x02810001` | `0x03DA03D9` | `0x00010001` | 2026-10-16 |
 | This emulator, mode 3, ACTION down for approximately 0.3 seconds | `0x00000002` | `0x02810001` | `0x03DB03DA` | `0x00010001` | 2026-10-17 |
-| This emulator, mode 4, DOWN and ACTION down for approximately 0.3 seconds each | `0x00020002` | `0x00880008` | `0x03E703E7` | `0x00000000` | 2026-10-17 |
+| This emulator, mode 4, DOWN and ACTION down for approximately 0.3 seconds each | `0x00020002` | `0x02880008` | `0x03E703E7` | `0x00000000` | 2026-10-17 |
 
 In mode 3, the first two interrupts are ACTION, and Timer1 has the count of the store at both. With ACTION down for approximately 3 seconds, the handler counts 29 Timer1 interrupts after the store. Mode 3 masks each source within three instructions after the code of the mode runs again. Thus the code of the mode does not run while ACTION stays down, and the CPU executes only the interrupt handler. In mode 4, the first two interrupts are DOWN, before the store, at the start count of Timer1. That is the press of DOWN that starts the mode. The mode acknowledges DOWN before the unmask, and the request comes back while DOWN stays down.
 
