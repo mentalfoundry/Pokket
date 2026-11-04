@@ -268,6 +268,7 @@
 @ INTC STATUS bit 11: the docking level (1 = in the slot of a PS1).
 .equ INT_IOP_BIT,            0x800
 .equ TIMER0_CTRL_DIV2,       0x4      @ divisor bits 0 (= /2) | enable
+.equ TIMER0_CTRL_DIV32,      0x5      @ divisor bits 1 (= /32) | enable
 @ One capture: 8 words (six bit times, the change count and the last sample,
 @ and the time of the last change; see run_com_capture), and then the info
 @ word. The two are adjacent, and an entry of
@@ -386,7 +387,7 @@
 @ The selected mode of screen 13 (0 to STOP_MODE_COUNT - 1). Up selects the next mode, and Down
 @ runs it. See stop_buttons in cpu.s.
 .equ WRAM_STOP_MODE,         0x694
-.equ STOP_MODE_COUNT,        13
+.equ STOP_MODE_COUNT,        15
 @ 4 words: the four rows of mode 1, the masked mode. See stop_test_masked in cpu.s.
 .equ WRAM_STOP_MASKED,       0x698
 @ 4 words each: the four rows of modes 2, 3, and 4. See stop_test_instr and stop_test_capture.
@@ -408,6 +409,11 @@
 .equ WRAM_CAP_PH,            WRAM_CPU_BUF + 0x20
 @ 4 words: the four rows of mode 11 of screen 13. See stop_test_wram in cpu.s.
 .equ WRAM_STOP_M11,          0x6D8
+@ 4 words: the four rows of modes 13 and 14 of screen 13. The two modes use the same rows, thus the
+@ rows show the mode that ran last. See stop_test_rtc_wake and stop_test_rearm in cpu.s.
+.equ WRAM_STOP_M13,          0x6E8
+@ The phase of mode 13: 0 before the store, 1 after it. See rtc_wake_handler in cpu.s.
+.equ WRAM_STOP_M13_PHASE,    0x6F8
 @ 4 words each: the four rows of modes 7 to 10 and 12 of screen 13. See stop_test_instr,
 @ stop_test_unmask, stop_test_release, stop_test_window, and stop_test_rtc in cpu.s. These words
 @ are below the app stack, which starts at 0x800 and grows down. In tools/bench_probe.c runs of

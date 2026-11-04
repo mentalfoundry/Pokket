@@ -76,7 +76,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "usage: %s <bios.bin> <app.mcs> [frames] [pages] [probe]\n", argv[0]);
         fprintf(stderr, "  pages: screen number to page to after launch (0 = leave wherever it lands)\n");
         fprintf(stderr, "  probe: with pages = 29, the probe to select and run with Down\n");
-        fprintf(stderr, "         with pages = 13, the mode of screen 13 (0 to 12), which Down runs. ACTION wakes the CPU\n");
+        fprintf(stderr, "         with pages = 13, the mode of screen 13 (0 to 14), which Down runs. ACTION wakes the CPU\n");
         fprintf(stderr, "         with pages = 15, any value: Down arms the run, and ACTION ends it before a dock\n");
         return 1;
     }
@@ -217,8 +217,9 @@ int main(int argc, char **argv) {
                     psemu_bus_read32(&ps->bus, base), psemu_bus_read32(&ps->bus, base + 4u),
                     psemu_bus_read32(&ps->bus, base + 8u), psemu_bus_read32(&ps->bus, base + 12u));
             }
-            for (k = 5; k <= 12; k++) {
-                static const uint32_t bases[8] = {0x670u, 0x270u, 0x700u, 0x710u, 0x720u, 0x730u, 0x6D8u, 0x740u};
+            for (k = 5; k <= 14; k++) {
+                static const uint32_t bases[10] = {0x670u, 0x270u, 0x700u, 0x710u, 0x720u, 0x730u, 0x6D8u, 0x740u,
+                                                   0x6E8u, 0x6E8u};
                 uint32_t base = bases[k - 5];
                 printf("screen13 mode %d rows @0x%03X: 0x%08X 0x%08X 0x%08X 0x%08X\n", k, base,
                     psemu_bus_read32(&ps->bus, base), psemu_bus_read32(&ps->bus, base + 4u),

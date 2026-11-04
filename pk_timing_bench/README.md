@@ -237,7 +237,7 @@ The two rows use different divisors deliberately. A running pulse is a full seco
 
 ### Screen 13: does bit 0 of CLK control (0x0B000004) stop the CPU?
 
-Each other screen here reports a number that it measured at startup. This screen is interactive. **UP selects the next mode, and DOWN runs the selected mode.** The digit after the `D` at the top is the selected mode, in hex: mode 10 shows `A`, mode 11 shows `B`, and mode 12 shows `C`. Mode 0 is the stop test that the paragraphs below describe. The measured quantity is the time that the CPU stayed stopped. On a device with no other input, only a button press from a person ends that time.
+Each other screen here reports a number that it measured at startup. This screen is interactive. **UP selects the next mode, and DOWN runs the selected mode.** The digit after the `D` at the top is the selected mode, in hex: mode 10 shows `A`, and mode 14 shows `E`. Mode 0 is the stop test that the paragraphs below describe. The measured quantity is the time that the CPU stayed stopped. On a device with no other input, only a button press from a person ends that time.
 
 **The reason for this screen.** A real commercial app arms an idle timer. When that timer expires and no button is down, the app writes `1` to this register. That write is the last step of a power-down sequence. The earlier steps turn the sound off, mask the RTC interrupt, and turn the display off. Real hardware sleeps at that point, which a test confirms: the screen blanks, and a button press brings it back. But *that this register is the register that stops the CPU* was an inference from the writes next to it. This screen tests the write alone, with no other part of that sequence. No quantity of tracing of the real app can give that separation. See "CLK control" in [docs/hardware-notes.md](../docs/hardware-notes.md).
 
@@ -262,6 +262,8 @@ Each other screen here reports a number that it measured at startup. This screen
 | 10 (`A`) | `stop_test_window` | ACTION | four stops, with 1, 2, 3, and 4 `MOV`s before one read of Timer1 |
 | 11 (`B`) | `stop_test_wram` | ACTION | four stops: three from WRAM, and one with a `MOV` of 3 cycles |
 | 12 (`C`) | `stop_test_rtc` | none | the RTC request at each edge of the RTC line. This mode does not stop the CPU. |
+| 13 (`D`) | `stop_test_rtc_wake` | the RTC and ACTION | a stop: does the RTC wake the CPU? |
+| 14 (`E`) | `stop_test_rearm` | Timer2 | the cost of the rearm method of the serial-carrying app. This mode does not stop the CPU. |
 
 **Mode 1, the masked mode.** Timer1 stays masked, and the handler acknowledges only the buttons. Thus a Timer1 request stays in the hold register of the interrupt controller, and the screen reads it. Each of the four rows is one sample, in the form `CH00NNNN`: `C` is the Timer1 control (`6` = /512 and enabled), `H` is the Timer1 bit of the hold register (`1` = a request), and `NNNN` is the Timer1 count. Row 1 is before the test changes Timer1, row 2 is immediately after the arm and an acknowledge, row 3 is immediately before the store, and row 4 is immediately after the wake. This emulator gives `0000035B`, `600003E7`, `600003DB`, and `61000222`. Row 4 shows a request, because Timer1 counts while ACTION stays down after the wake, the same as on real hardware.
 
@@ -315,6 +317,19 @@ These results use the cycle costs of this emulator. A result that agrees with no
 | 4 | the next falling edge of the line |
 
 `0200` in the hold half shows an RTC request. Row 1 shows if an acknowledge clears the request. Row 2 shows if the rising edge sets it. Row 3 shows if an acknowledge clears it while the line is high, and its status half shows if the acknowledge also clears the line bit. Row 4 shows if the falling edge sets the request. If row 3 shows no `0200` in the status half, the mode does not see the falling edge, and row 4 is not at an edge. `FFFFFFFF` is a row that the mode did not get to, because the line did not change in approximately 4 seconds. The code of this mode is in the first block, after each routine of that block, because the second block is full. This emulator gives `00800008`, `02800200`, `00800200`, and `00800000`, the same as real hardware. The `0008` in row 1 is DOWN, which is still down.
+
+**Mode 13 (`D`), the RTC wake.** **Press DOWN, then do not touch the device for approximately 10 seconds.** The mode unmasks only the RTC and ACTION. It waits for a rising edge of the RTC line, acknowledges the RTC, and writes 1 to `CLK control`. The next rising edge of the line comes approximately 1 second after the store. **If the bar goes away by itself after approximately 1 second, the RTC wakes the CPU.** If the bar stays, press ACTION to wake the device. The IRQ callback records the first interrupt after the store:
+
+| row | meaning |
+|---|---|
+| 1 | the RTC seconds (BCD) before the store (the 2 digits before the last 2) and after the wake (the last 2 digits) |
+| 2 | the hold register (high 4 digits) and the status register (low 4 digits) at the first interrupt after the store. `0200` in the hold half is the RTC, and `0001` is ACTION. `FFFFFFFF` if no interrupt occurred |
+| 3 | the RTC time register at the first interrupt after the store |
+| 4 | the number of interrupts after the store |
+
+An RTC wake gives a first interrupt with `0200` and no `0001` in the hold half, approximately 1 second after the store. This emulator gives `00001920`, `02000200`, `06000020`, and `00000001`: the RTC wakes the CPU 1 second after the store. That is the model of this emulator, and no test on real hardware confirms it. The rows of modes 13 and 14 are the same words, thus the rows show the mode that ran last.
+
+**Mode 14 (`E`), the rearm of the serial-carrying app.** This mode does not write `CLK control`, and it needs no button after the press of DOWN that starts it. That app arms Timer2 with `1200 - 184 = 1016`. Its FIQ handler disables Timer2, writes the period, and enables Timer2 again. The enable loads the count from the period, thus the time from the expiry to the enable adds to each period. The mode measures 64 periods of 1016 at /2, with Timer0 at /32, the same as screen 10. Row 1 uses the handler of screen 10, which writes the period and does not disable Timer2. Row 2 uses a handler that disables Timer2, writes the period, and enables it again. **(row 2 - row 1) / 4 is the added Timer2 ticks for each period.** If that value is near 184, the rearm method gives the `184`. Rows 3 and 4 are 0. This emulator gives `00000FE4` and `00001090`: 43 added ticks for each period.
 
 **Mode 5, the hold bit of a held button.** This mode does not write `CLK control`. **Press DOWN, and keep it down for approximately 2 seconds, then release it.** That press starts the mode, and the mode reads the interrupt controller while DOWN is still down. It masks each source, thus no interrupt occurs. Each row is the hold register (the high 4 digits) and the status register (the low 4 digits). DOWN is `0008` in each register.
 

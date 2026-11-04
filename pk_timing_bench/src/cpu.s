@@ -1656,6 +1656,8 @@ draw_stop_rows:
 @  10  stop_test_window     four stops, with 1, 2, 3, and 4 MOVs before one read of Timer1
 @  11  stop_test_wram       four stops: three from WRAM, and one with a MOV of 3 cycles
 @  12  stop_test_rtc        the RTC request at each edge of the RTC line, with each source masked
+@  13  stop_test_rtc_wake   a stop with the RTC and ACTION unmasked: does the RTC wake the CPU?
+@  14  stop_test_rearm      the cost of a Timer2 rearm with a disable and an enable, over FIQ
 @ -> r1 = 1 if this function used a press, and 0 if not. Keeps r0 and r4 to r11.
     .global stop_buttons
 stop_buttons:
@@ -1706,6 +1708,8 @@ stop_modes:
     .word stop_test_window      @ 10
     .word stop_test_wram        @ 11
     .word stop_test_rtc         @ 12
+    .word stop_test_rtc_wake    @ 13
+    .word stop_test_rearm       @ 14
 
 @ The masked mode of screen 13. It is the same as stop_test_phased, but Timer1 stays masked. Only
 @ ACTION is unmasked, for the wake, and its handler acknowledges only the buttons. Thus each Timer1
@@ -1765,6 +1769,8 @@ stop_rows:
     .word WRAM_STOP_M10
     .word WRAM_STOP_M11
     .word WRAM_STOP_M12
+    .word WRAM_STOP_M13
+    .word WRAM_STOP_M13
 
     .global stop_test_masked
 stop_test_masked:
@@ -3223,6 +3229,225 @@ thumb_bx_word:
     .align 2
     .ltorg
     .arm
+
+@ ---------------------------------------------------------------------------------------------
+@ Mode 13 of screen 13 (D). The RTC and ACTION are unmasked, and each other source is masked. The
+@ mode waits for a rising edge of the RTC line, acknowledges the RTC, and writes 1 to CLK control.
+@ Thus the next rising edge of the RTC line comes approximately 1 second after the store. If the
+@ RTC wakes the CPU, the device wakes by itself after approximately 1 second. If not, ACTION wakes
+@ it. The IRQ callback records the first interrupt after the store:
+@   Row 1: the RTC seconds (BCD) before the store (bits 8 to 15) and after the wake (bits 0 to 7).
+@   Row 2: the hold register (bits 16 to 31) and the status register (bits 0 to 15) at the first
+@          interrupt after the store. 0200 in the hold half is the RTC, and 0001 is ACTION.
+@          FFFFFFFF if no interrupt occurred.
+@   Row 3: the RTC time register at the first interrupt after the store.
+@   Row 4: the number of interrupts after the store.
+stop_test_rtc_wake:
+    push {r4, r5, r6, r7, r8, r9, r10, r11, lr}
+    ldr r9, =WRAM_STOP_M13
+    mov r0, #0
+    str r0, [r9]
+    str r0, [r9, #12]
+    mvn r0, #0
+    str r0, [r9, #4]
+    str r0, [r9, #8]
+    ldr r0, =WRAM_STOP_M13_PHASE
+    mov r1, #0
+    str r1, [r0]
+
+    ldr r0, =rtc_wake_handler
+    adr lr, 1f
+    ldr r1, =register_irq_handler
+    bx r1
+1:  ldr r4, =INTC_BASE
+    mvn r0, #0
+    str r0, [r4, #0xC]                  @ mask each source
+    str r0, [r4, #0x10]                 @ and acknowledge it
+    ldr r0, =(INT_RTC_BIT | 1)          @ unmask the RTC and ACTION
+    str r0, [r4, #8]
+    bl stop_bar
+
+    mov r0, #0                          @ wait for a rising edge of the RTC line
+    bl rtc_wait_level
+    mov r0, #INT_RTC_BIT
+    bl rtc_wait_level
+    mov r0, #INT_RTC_BIT                @ acknowledge the request of that edge
+    str r0, [r4, #0x10]
+    ldr r0, =RTC_TIME_ADDR
+    ldr r5, [r0]
+    and r5, r5, #0xFF                   @ the seconds before the store
+    ldr r2, =WRAM_STOP_M13_PHASE
+    mov r3, #1
+    ldr r0, =CLK_CONTROL_ADDR
+    mov r1, #1
+    str r3, [r2]                        @ phase 1
+    str r1, [r0]                        @ the store under test
+
+    ldr r0, =RTC_TIME_ADDR              @ the CPU runs again here
+    ldr r6, [r0]
+    and r6, r6, #0xFF
+    mvn r0, #0
+    str r0, [r4, #0xC]                  @ mask and acknowledge each source
+    str r0, [r4, #0x10]
+    orr r5, r6, r5, lsl #8
+    str r5, [r9]                        @ row 1
+    mov r0, #0                          @ remove the handler
+    adr lr, 2f
+    ldr r1, =register_irq_handler
+    bx r1
+2:  pop {r4, r5, r6, r7, r8, r9, r10, r11, lr}
+    bx lr
+    .ltorg
+
+@ The IRQ callback of mode 13. It acknowledges each pending source. After the store, it counts each
+@ call, and it records the first one.
+rtc_wake_handler:
+    push {r0, r1, r2, r3, lr}
+    ldr r0, =INTC_BASE
+    ldr r1, [r0]                        @ the hold register
+    ldr r2, [r0, #4]                    @ the status register
+    str r1, [r0, #0x10]
+    ldr r0, =WRAM_STOP_M13_PHASE
+    ldr r0, [r0]
+    cmp r0, #0
+    beq 9f
+    ldr r0, =WRAM_STOP_M13
+    ldr r3, [r0, #12]
+    add r3, r3, #1
+    str r3, [r0, #12]                   @ row 4
+    cmp r3, #1
+    bne 9f
+    mov r1, r1, lsl #16
+    mov r2, r2, lsl #16
+    orr r1, r1, r2, lsr #16
+    str r1, [r0, #4]                    @ row 2
+    ldr r1, =RTC_TIME_ADDR
+    ldr r1, [r1]
+    str r1, [r0, #8]                    @ row 3
+9:  pop {r0, r1, r2, r3, pc}
+    .ltorg
+
+@ ---------------------------------------------------------------------------------------------
+@ Mode 14 of screen 13 (E). The rearm method of the serial-carrying app: its FIQ handler disables
+@ Timer2, writes the period, and enables Timer2 again. The enable loads the count from the period,
+@ thus the time from the expiry to the enable adds to each period. The mode measures 64 periods
+@ of 1016 at /2, the same as screen 10, with Timer0 at /32:
+@   Row 1: the handler of screen 10, which writes the period and does not disable Timer2.
+@   Row 2: a handler that disables Timer2, writes the period, and enables Timer2.
+@ (row 2 - row 1) / 4 is the added Timer2 ticks for each period. Rows 3 and 4 are 0. This mode does
+@ not stop the CPU.
+stop_test_rearm:
+    push {r4, r5, r6, r7, r8, r9, r10, r11, lr}
+    ldr r9, =WRAM_STOP_M13
+    mov r0, #0
+    str r0, [r9, #8]
+    str r0, [r9, #12]
+    ldr r0, =TIMER0_BASE                @ keep Timer0, then run it at /32
+    ldr r10, [r0]
+    ldr r11, [r0, #8]
+    mov r1, #0
+    str r1, [r0, #8]
+    ldr r1, =0xFFFF
+    str r1, [r0]
+    mov r1, #TIMER0_CTRL_DIV32
+    str r1, [r0, #8]
+
+    ldr r0, =irq_rearm_handler_t2
+    bl rearm_measure
+    str r0, [r9]
+    ldr r0, =rearm_disable_handler
+    bl rearm_measure
+    str r0, [r9, #4]
+
+    ldr r0, =TIMER0_BASE                @ write Timer0 back
+    mov r1, #0
+    str r1, [r0, #8]
+    str r10, [r0]
+    str r11, [r0, #8]
+    pop {r4, r5, r6, r7, r8, r9, r10, r11, lr}
+    bx lr
+    .ltorg
+
+@ r0 = an FIQ callback that counts each call in WRAM_REARM2_COUNTER -> r0 = the Timer0 ticks of
+@ EXP8_INTERRUPTS periods of Timer2. The same method as run_experiment_10_fiq_rearm_latency in
+@ experiments.s. Keeps r9 to r11.
+rearm_measure:
+    push {r4, r5, r6, r7, r8, lr}
+    mov r8, r0
+    ldr r0, =WRAM_REARM2_COUNTER
+    mov r1, #0
+    str r1, [r0]
+    ldr r4, =TIMER2_BASE                @ keep Timer2
+    ldr r5, [r4]
+    ldr r7, [r4, #8]
+
+    mov r0, r8
+    adr lr, 1f
+    ldr r1, =register_fiq_handler
+    bx r1
+1:  mov r0, #0                          @ arm Timer2
+    str r0, [r4, #8]
+    ldr r0, =EXP8_TIMER_PERIOD
+    str r0, [r4]
+    mov r0, #EXP8_TIMER_CTRL
+    str r0, [r4, #8]
+    ldr r0, =INTC_ENABLE                @ unmask only Timer2
+    ldr r1, =INT_TIMER2_BIT
+    str r1, [r0]
+
+    ldr r8, =WRAM_REARM2_COUNTER
+2:  ldr r0, [r8]                        @ start at an interrupt
+    cmp r0, #0
+    beq 2b
+    mov r0, #0
+    str r0, [r8]
+    ldr r2, =TIMER0_COUNT
+    ldr r3, [r2]
+3:  ldr r0, [r8]
+    cmp r0, #EXP8_INTERRUPTS
+    blo 3b
+    ldr r0, [r2]
+    sub r6, r3, r0                      @ Timer0 counts down
+    mov r6, r6, lsl #16
+    mov r6, r6, lsr #16
+
+    ldr r0, =INTC_MASK                  @ mask and acknowledge each source
+    mvn r1, #0
+    str r1, [r0]
+    ldr r0, =INTC_BASE
+    str r1, [r0, #0x10]
+    mov r0, #0                          @ remove the handler
+    adr lr, 4f
+    ldr r1, =register_fiq_handler
+    bx r1
+4:  mov r0, #0                          @ write Timer2 back
+    str r0, [r4, #8]
+    str r5, [r4]
+    str r7, [r4, #8]
+    mov r0, r6
+    pop {r4, r5, r6, r7, r8, lr}
+    bx lr
+    .ltorg
+
+@ The FIQ callback of row 2 of mode 14: the rearm of the serial-carrying app.
+rearm_disable_handler:
+    push {r0, r1, lr}
+    ldr r0, =INTC_BASE
+    ldr r1, [r0]
+    str r1, [r0, #0x10]                 @ acknowledge each pending source
+    ldr r0, =TIMER2_BASE
+    mov r1, #0
+    str r1, [r0, #8]                    @ disable
+    ldr r1, =EXP8_TIMER_PERIOD
+    str r1, [r0]                        @ the period
+    mov r1, #EXP8_TIMER_CTRL
+    str r1, [r0, #8]                    @ enable: the count is the period again
+    ldr r0, =WRAM_REARM2_COUNTER
+    ldr r1, [r0]
+    add r1, r1, #1
+    str r1, [r0]
+    pop {r0, r1, pc}
+    .ltorg
 
 @ The last 16 bytes of the app (see link.ld): the data of probe 34, and the Thumb code of probe 36,
 @ which runs into 0x02006000.

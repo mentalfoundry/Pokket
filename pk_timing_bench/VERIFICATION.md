@@ -174,6 +174,18 @@ On real hardware, only the read after 2 `MOV`s in WRAM occurs before the stop. O
 
 On real hardware, an acknowledge clears the RTC request, the rising edge of the line sets it, and the falling edge does not set it. An acknowledge with the line high clears the request, and the request does not come back while the line stays high. That acknowledge does not clear the line bit of the status register. In modes 8 and 9, the RTC request stays in the hold register while the line is low, with no acknowledge. Thus the request is a latch that the rising edge sets and that only an acknowledge clears. This emulator gives the same result (`INT_LATCH_MASK` and `INT_LEVEL_MASK` in `core/src/intc.h`).
 
+**Mode 13, the RTC wake.** Row 1 is the RTC seconds before the store and after the wake. Row 2 is the hold register (high) and the status register (low) at the first interrupt after the store. Row 3 is the RTC time at that interrupt. Row 4 is the number of interrupts after the store. No real-hardware run yet.
+
+| Source | Row 1 | Row 2 | Row 3 | Row 4 | Date |
+|---|---|---|---|---|---|
+| This emulator | `0x00001920` | `0x02000200` | `0x06000020` | `0x00000001` | 2026-11-05 |
+
+**Mode 14, the rearm of the serial-carrying app.** Row 1 is 64 periods with the handler of screen 10. Row 2 is 64 periods with a handler that disables Timer2, writes the period, and enables Timer2. Both are Timer0 ticks at /32. No real-hardware run yet.
+
+| Source | Row 1 | Row 2 | Row 3 | Row 4 | Date |
+|---|---|---|---|---|---|
+| This emulator | `0x00000FE4` | `0x00001090` | `0x00000000` | `0x00000000` | 2026-11-05 |
+
 **Mode 5, the hold bit of a held button.** Each row is the hold register (high) and the status register (low). Row 1 is at the start, with DOWN down. Row 2 is after the mask of each source and an acknowledge of DOWN. Row 3 is approximately 10 ms later. Row 4 is after the release of DOWN.
 
 | Source | Row 1 | Row 2 | Row 3 | Row 4 | Date |
