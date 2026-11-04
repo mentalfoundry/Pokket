@@ -397,6 +397,23 @@ Probes 23 to 2B, with no real-hardware run yet. This emulator gives these values
 | 2A (`F_WAIT1 = 0x10`) | `2A010000 00000BB8 00000C81 00000BB9` |
 | 2B (`F_WAIT1 = 7`) | `2B010000 00000BB8 00000C81 00000BB9` |
 
+Probes 2C to 37, with no real-hardware run yet. These are the values of the model of this emulator. Each value that agrees with this model on real hardware confirms a rule that no test confirmed before (see "Known open questions" in `docs/hardware-notes.md`).
+
+| probe | this emulator |
+|---|---|
+| 2C (`STMIB`, `STMDA`, `STMDB`, empty list) | `2C010000 00040040 FFC4FFC0 FFC0FFC0` |
+| 2D (`LDMIB`, `LDMDA`, `LDMDB`, empty list) | `2D010000 00040040 FFC4FFC0 FFC0FFC0` |
+| 2E (FLASH1 at + 1, + 3, + 2) | `2E010000 11843322 33843384 84338433` |
+| 2F (BIOS at + 1, + 3, + 2) | `2F010000 04040000 00040004 04000400` |
+| 30 (FLASH2 at + 1, + 2, + 3) | `30010000 11843322 22118433 33221184` |
+| 31 (a fetch at `0x040038BA`) | `31020000 00000006 80000010 00000000` |
+| 32 (the fetch rule in FLASH2) | `32020000 0000000A 20000010 00000000` |
+| 33 (`STR` after the app) | `33010000 00000000 00000000 00000000` |
+| 34 (`LDM` with an abort) | `34050000 00000000 11111111 EEEEEEEE` |
+| 35 (Thumb data abort) | `35050000 00000008 60000030 00000000` |
+| 36 (Thumb prefetch abort) | `36040000 00000004 60000030 00000000` |
+| 37 (Thumb `BX` with bit 1 set) | `37010000 00000008 00000000 00000000` |
+
 The same unit, with a build of three blocks, on 2026-10-16. In that build, `0x02004000` is a target in the third block: `MOV r1,PC`, and then `BX r3`.
 
 | probe | real hardware, three blocks | this emulator, three blocks |

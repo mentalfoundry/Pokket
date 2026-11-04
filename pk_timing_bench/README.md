@@ -577,6 +577,18 @@ This screen runs nothing when it is drawn. **UP** selects the next probe, and **
 | 29 | the WRAM loop with `F_WAIT2 = 0x10`, `0x40`, and `0x80` | one row for each value |
 | 2A | the same as 25, with `F_WAIT1 = 0x10`. The kernel writes `0x10` for the fast clock modes | the same rows as 25 |
 | 2B | the same as 25, with `F_WAIT1 = 7`. The kernel writes `7` one time at boot | the same rows as 25 |
+| 2C | `STMIB`, `STMDA`, and `STMDB` with an empty register list, one row each. See `probe_empty_stm` | each row: the address of the stored word minus the base (high 4 digits, `EEEE` if no word changed), and the base after minus the base (low 4 digits) |
+| 2D | `LDMIB`, `LDMDA`, and `LDMDB` with an empty register list. Each word of the buffer holds the address of one word of a sled of `ADD` instructions, thus the landing address gives the word that the CPU loaded. See `probe_empty_ldm` | each row: the address of the loaded word minus the base (high 4 digits, `FFFF` if R15 did not change), and the base after minus the base (low 4 digits) |
+| 2E | `LDR` from FLASH1 at a word + 1, + 3, and + 2, with the data of probe 3 | rows 2 to 4: the three values |
+| 2F | the same, from BIOS ROM at `0x04000210` | rows 2 to 4: the three values |
+| 30 | `LDR` from FLASH2, the physical flash, at + 1, + 2, and + 3 of the data of probe 3. The probe finds the physical block from `F_BANK_FLG` and `F_BANK_VAL` | rows 2 to 4: the three values. A result of `EE` if no block holds the data |
+| 31 | `MOV PC` to `0x040038BA`, a BIOS address with bit 1 set, with N = 1. See `probe_fetch_bios` | a trap `02` with row 2 = `6`: the halfword in both halves. A trap `03` with row 2 = `E` or `C`: the aligned word. A trap `03` with row 2 = `6`: the bytes at + 2 to + 5. No fetch rule reaches a store |
+| 32 | the fetch rule of probe E, at the address of `probe_fetch_pad` in FLASH2 | the same meaning as probe E |
+| 33 | `STR` to `0x02006000`, after the app | `01` if no abort, a trap `05` with row 2 = `8` if an abort |
+| 34 | `LDMIA r5!,{r6-r10}` from `0x02005FF0`. The fifth word is after the app. A handler of this probe records the registers at the abort. See `probe_ldm_abort` | row 2: r5 after minus `0x02005FF0` (0: no writeback). Row 3: r6 (`11111111` if the load before the abort stays). Row 4: r10 (`EEEEEEEE` if the aborted load does not write it) |
+| 35 | a Thumb `LDR` from `0x02006000` | a trap `05`. Row 2: LR minus the address of the `LDR`. Row 3: the CPSR, with the T bit |
+| 36 | Thumb code at the end of the app, which runs into `0x02006000` | a trap `04`. Row 2: LR minus `0x02006000` |
+| 37 | a Thumb `BX` to the target of probe A + 2, an ARM address with bit 1 set | row 2: `8` if the `BX` clears bit 1, `A` if bit 1 stays |
 
 The word at the target is `MOV r1,PC`, and each other word near the target is `BX r3`, which returns to the app. Probes 3 to 5 show how each memory region answers a word read at an address 2 above a word boundary. A difference between FLASH1 and WRAM in probes 6 to D then points to the memory, and not to the CPU.
 

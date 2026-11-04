@@ -49,6 +49,13 @@ SECTIONS
     . = 0x02004000;
     .block3 : { KEEP(*(.block3)) }
 
+    ASSERT(. <= 0x02005FF0, "the third block of pk_timing_bench is full")
+
+    /* The last 16 bytes of the app: the data of probe 34 and the Thumb code of probe 36 (cpu.s).
+     * Each needs the end of the app at 0x02006000. */
+    . = 0x02005FF0;
+    .block3_end : { KEEP(*(.block3_end)) }
+
     ASSERT(. <= BODY_END, "pk_timing_bench body is larger than BLOCKS (see the Makefile)")
 
     /DISCARD/ : { *(.ARM.attributes) *(.ARM.exidx*) *(.comment) *(.note.*) }

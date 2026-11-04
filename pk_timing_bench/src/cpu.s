@@ -760,6 +760,24 @@ und_thumb_insn:
 @  2A  the same as 25, with F_WAIT1 = 0x10.   2B  the same as 25, with F_WAIT1 = 7.
 @      Each probe from 26 to 2B writes 0 to the register after its loops. The kernel gives 0 to
 @      both registers before it starts the app.
+@  2C  STMIB, STMDA, and STMDB with an empty list. Each row is the address of the stored word minus
+@      the base (bits 16 to 31, EEEE if no word changed), and the base after minus the base (bits 0
+@      to 15). See probe_empty_stm.
+@  2D  LDMIB, LDMDA, and LDMDB with an empty list. Each row is the address of the loaded word minus
+@      the base (bits 16 to 31, FFFF if R15 did not change), and the base after minus the base (bits
+@      0 to 15). See probe_empty_ldm.
+@  2E  LDR from FLASH1 at a word + 1, + 3, and + 2, with the data of probe 3.
+@  2F  the same, from BIOS ROM at 0x04000210.
+@  30  LDR from FLASH2 at a word + 1, + 2, and + 3, with the data of probe 3. See probe_flash2_data.
+@  31  MOV PC to 0x040038BA, a BIOS address with bit 1 set. See probe_fetch_bios.
+@  32  the fetch rule of probe E in FLASH2, at the physical address of probe_fetch_pad.
+@  33  STR to 0x02006000, after the app.
+@  34  LDMIA r5!,{r6-r10} from 0x02005FF0, where the fifth word is after the app. Row 2: r5 after
+@      minus 0x02005FF0. Row 3: r6. Row 4: r10. See probe_ldm_abort.
+@  35  a Thumb LDR from 0x02006000. A trap gives row 2 = LR minus the address of the LDR.
+@  36  Thumb code that runs into 0x02006000. A trap gives row 2 = LR minus 0x02006000.
+@  37  a Thumb BX to the target of probe A + 2: an ARM address with bit 1 set. Row 2 is r1 minus the
+@      target, the same as probe A.
 @ In probes 0 and 6 to D, the word at the target is MOV r1,PC, and each other word of probe_pad is
 @ BX r3. r3 holds the address of probe_pc_back. If the probe returns, row 2 is r1 minus the aligned
 @ target: 8 if R15 was aligned, A if not, and 0 if MOV r1,PC did not execute.
@@ -2709,6 +2727,18 @@ probe_table:
     .word probe_wait2_high      @ 29
     .word probe_wait1_10        @ 2A
     .word probe_wait1_07        @ 2B
+    .word probe_empty_stm       @ 2C
+    .word probe_empty_ldm       @ 2D
+    .word probe_mis_flash1      @ 2E
+    .word probe_mis_bios        @ 2F
+    .word probe_flash2_data     @ 30
+    .word probe_fetch_bios      @ 31
+    .word probe_fetch_flash2    @ 32
+    .word probe_store_after_app @ 33
+    .word probe_ldm_abort       @ 34
+    .word probe_thumb_dabt      @ 35
+    .word probe_thumb_pabt      @ 36
+    .word probe_thumb_bx        @ 37
 
 @ Probe 23. Reads the flash control registers, and writes nothing.
 probe_flash_regs_a:
@@ -2888,3 +2918,321 @@ probe_wait2_high:
     ldr r5, =0x00804010
     b probe_wait2_bits
     .ltorg
+
+@ ---------------------------------------------------------------------------------------------
+@ Probes 2C and 2D: an empty register list with IB, DA, and DB. The base is WRAM_CPU_BUF_MID - 4 for
+@ IB and WRAM_CPU_BUF_MID for DA and DB. Thus each address from the base - 0x40 to the base + 0x40
+@ is in WRAM_CPU_BUF.
+
+@ r9 = the base. -> r11 = the address of the first word of WRAM_CPU_BUF that is not 0, minus the
+@ base, or 0xEEEE if each word is 0. Uses r2, r3, and r12.
+empty_find:
+    ldr r2, =WRAM_CPU_BUF
+    mov r3, #32
+1:  ldr r12, [r2]
+    cmp r12, #0
+    subne r11, r2, r9
+    bxne lr
+    add r2, r2, #4
+    subs r3, r3, #1
+    bne 1b
+    ldr r11, =0xEEEE
+    bx lr
+
+@ r11 = the high value, r0 = the base after, r9 = the base -> r11 = the row. Uses r12.
+empty_pack:
+    sub r12, r0, r9
+    mov r12, r12, lsl #16
+    mov r11, r11, lsl #16
+    orr r11, r11, r12, lsr #16
+    bx lr
+
+    .macro EMPTY_STM word, base, out
+    mov r1, #0
+    bl fill_cpu_buf
+    ldr r9, =\base
+    mov r0, r9
+    .word \word
+    bl empty_find
+    bl empty_pack
+    mov \out, r11
+    .endm
+
+probe_empty_stm:
+    EMPTY_STM 0xE9A00000, WRAM_CPU_BUF_MID - 4, r4      @ stmib r0!, {}
+    EMPTY_STM 0xE8200000, WRAM_CPU_BUF_MID, r5          @ stmda r0!, {}
+    EMPTY_STM 0xE9200000, WRAM_CPU_BUF_MID, r6          @ stmdb r0!, {}
+    mov r1, r4
+    mov r2, r5
+    mov r3, r6
+    mov r0, #1
+    b probe_finish
+    .ltorg
+
+@ Writes the address of word i of ldm_sled to word i of WRAM_CPU_BUF. Uses r2, r3, and r12.
+fill_sled_buf:
+    ldr r2, =WRAM_CPU_BUF
+    ldr r3, =ldm_sled
+    add r12, r2, #0x80
+1:  str r3, [r2], #4
+    add r3, r3, #4
+    cmp r2, r12
+    blo 1b
+    bx lr
+    .ltorg
+
+@ An LDM that loads R15 from word i of WRAM_CPU_BUF lands at word i of this sled. Each word after it
+@ adds 1 to r2, thus r2 = 32 - i at the end. The sled returns to r11.
+ldm_sled:
+    .rept 32
+    add r2, r2, #1
+    .endr
+    bx r11
+
+    .macro EMPTY_LDM word, base, out
+    bl fill_sled_buf
+    ldr r9, =\base
+    mov r0, r9
+    mov r2, #0
+    adr r11, 1f
+    .word \word
+    ldr r2, =0x100                      @ R15 did not change
+1:  bl ldm_row
+    mov \out, r11
+    .endm
+
+@ r2 = the count of the sled, r0 = the base after, r9 = the base -> r11 = the row. Uses r12.
+ldm_row:
+    cmp r2, #0x100
+    ldreq r11, =0xFFFF
+    beq empty_pack
+    rsb r12, r2, #32                    @ i
+    ldr r11, =WRAM_CPU_BUF
+    add r11, r11, r12, lsl #2
+    sub r11, r11, r9
+    b empty_pack
+
+probe_empty_ldm:
+    EMPTY_LDM 0xE9B00000, WRAM_CPU_BUF_MID - 4, r4      @ ldmib r0!, {}
+    EMPTY_LDM 0xE8300000, WRAM_CPU_BUF_MID, r5          @ ldmda r0!, {}
+    EMPTY_LDM 0xE9300000, WRAM_CPU_BUF_MID, r6          @ ldmdb r0!, {}
+    mov r1, r4
+    mov r2, r5
+    mov r3, r6
+    mov r0, #1
+    b probe_finish
+    .ltorg
+
+@ ---------------------------------------------------------------------------------------------
+@ Probes 2E and 2F. r4 = an aligned address -> rows 2 to 4: LDR at + 1, + 3, and + 2.
+probe_mis_flash1:
+    ldr r4, =probe_flash_data
+    b probe_mis_data
+probe_mis_bios:
+    ldr r4, =0x04000210
+probe_mis_data:
+    ldr r1, =WRAM_PROBE_TARGET
+    str r4, [r1]
+    ldr r1, [r4, #1]
+    ldr r2, [r4, #3]
+    ldr r3, [r4, #2]
+    mov r0, #1
+    b probe_finish
+    .ltorg
+
+@ r0 = an address in FLASH1 -> r0 = the same byte in FLASH2, or 0 if no enabled physical block has
+@ the slot of that address in F_BANK_VAL. Uses r1 to r3 and r12.
+flash1_to_flash2:
+    sub r1, r0, #0x02000000
+    mov r2, r1, lsr #13                 @ the slot
+    ldr r3, =FLASH_CTRL_BASE
+    ldr r12, [r3, #8]                   @ F_BANK_FLG
+    add r3, r3, #0x100
+    mov r1, #0                          @ the physical block
+1:  tst r12, #1
+    beq 2f
+    push {r0}
+    ldr r0, [r3, r1, lsl #2]
+    and r0, r0, #0xF
+    cmp r0, r2
+    pop {r0}
+    beq 3f
+2:  mov r12, r12, lsr #1
+    add r1, r1, #1
+    cmp r1, #16
+    blo 1b
+    mov r0, #0
+    bx lr
+3:  ldr r2, =0x1FFF
+    and r0, r0, r2
+    add r0, r0, r1, lsl #13
+    add r0, r0, #FLASH2_BASE
+    bx lr
+    .ltorg
+
+@ Probe 30. Rows 2 to 4: LDR from FLASH2 at + 1, + 2, and + 3 of the data of probe 3. A result of EE
+@ if no physical block holds that data.
+probe_flash2_data:
+    ldr r0, =probe_flash_data
+    bl flash1_to_flash2
+    movs r4, r0
+    moveq r0, #0xEE
+    beq probe_finish
+    ldr r1, =WRAM_PROBE_TARGET
+    str r4, [r1]
+    ldr r1, [r4, #1]
+    ldr r2, [r4, #2]
+    ldr r3, [r4, #3]
+    mov r0, #1
+    b probe_finish
+    .ltorg
+
+@ Probe 31. A fetch at 0x040038BA, with N = 1, Z = 0, and V = 0. At 0x040038B8 to 0x040038C3, J110
+@ holds the words 4770DF05, 4770DF06, and DF082200. Each fetch rule gives a trap, and no store:
+@   - The halfword in both halves: 47704770, undefined with MI. A trap 02, with row 2 = 6.
+@   - The aligned word: two LDRBMI of a byte of WRAM_CPU_DATA to SP, then DF082200, SWILE. A trap 03,
+@     with row 2 = E if bit 1 of R15 stays, and C if R15 is force aligned.
+@   - The bytes at + 2 to + 5: DF064770, SWILE. A trap 03, with row 2 = 6.
+@ probe_finish loads SP again after the trap.
+probe_fetch_bios:
+    ldr r4, =0x040038B8
+    ldr r1, =WRAM_PROBE_TARGET
+    str r4, [r1]
+    add r2, r4, #2
+    ldr r0, =WRAM_CPU_DATA
+    mov r5, #0
+    mov r6, #0
+    mov r1, #0
+    msr cpsr_f, #0x80000000             @ N = 1, Z = 0, C = 0, V = 0
+    mov pc, r2
+
+@ Probe 32. The fetch rule of probe E, in FLASH2.
+probe_fetch_flash2:
+    ldr r0, =probe_fetch_pad
+    bl flash1_to_flash2
+    movs r4, r0
+    moveq r0, #0xEE
+    beq probe_finish
+    b probe_fetch
+    .ltorg
+
+@ Probe 33. A store after the app. A data abort gives a trap 05, with row 2 = 8.
+probe_store_after_app:
+    adr r1, 1f
+    ldr r0, =WRAM_PROBE_TARGET
+    str r1, [r0]
+    ldr r4, =0x02006000
+    mov r1, #0
+1:  str r1, [r4]
+    mov r2, #0
+    mov r3, #0
+    mov r0, #1
+    b probe_finish
+    .ltorg
+
+@ The tail of the trap handlers (see trap_common), for a handler of a probe. r0 = the result, r2 =
+@ row 2, r3 = row 3, r1 = row 4. Runs in the mode of the exception.
+probe_trap_tail:
+    ldr r12, =TIMER1_BASE
+    mov r11, #0
+    str r11, [r12, #8]
+    ldr r12, =INTC_MASK
+    mvn r11, #0
+    str r11, [r12]
+    ldr r12, =INTC_BASE
+    str r11, [r12, #0x10]
+    mrs r12, spsr
+    bic r12, r12, #0xFF
+    orr r12, r12, #0x10
+    msr spsr_fsxc, r12
+    ldr lr, =probe_trapped
+    movs pc, lr
+    .ltorg
+
+@ Probe 34. The data abort slot holds ldm_abort_handler for this probe. probe_finish writes the old
+@ slot back.
+probe_ldm_abort:
+    ldr r0, =KERNEL_DABT_SLOT
+    ldr r1, =ldm_abort_handler
+    str r1, [r0]
+    ldr r5, =block3_end
+    ldr r6, =0xEEEEEEEE
+    mov r7, r6
+    mov r8, r6
+    mov r9, r6
+    mov r10, r6
+    ldmia r5!, {r6, r7, r8, r9, r10}
+    mov r2, #0                          @ no abort
+    mov r3, r6
+    mov r1, r10
+    mov r0, #1
+    b probe_finish
+ldm_abort_handler:
+    ldr r12, =block3_end
+    sub r2, r5, r12                     @ row 2: the base after minus the base
+    mov r3, r6                          @ row 3
+    mov r1, r10                         @ row 4
+    mov r0, #5
+    b probe_trap_tail
+    .ltorg
+
+@ Probe 35. A Thumb LDR after the app.
+probe_thumb_dabt:
+    ldr r0, =thumb_dabt_ldr
+    ldr r1, =WRAM_PROBE_TARGET
+    str r0, [r1]
+    add r0, r0, #1
+    ldr r4, =0x02006000
+    mov r1, #0
+    bx r0
+    .ltorg
+thumb_dabt_back:
+    mov r2, #0
+    mov r3, #0
+    mov r0, #1
+    b probe_finish
+
+@ Probe 36. Thumb code at the end of the app.
+probe_thumb_pabt:
+    ldr r0, =0x02006000
+    ldr r1, =WRAM_PROBE_TARGET
+    str r0, [r1]
+    ldr r0, =block3_end_thumb + 1
+    mov r1, #0
+    bx r0
+    .ltorg
+
+@ Probe 37. A Thumb BX to an ARM address with bit 1 set.
+probe_thumb_bx:
+    ldr r4, =WRAM_PROBE_PAD + 4
+    bl probe_pc_setup
+    add r2, r4, #2
+    ldr r0, =thumb_bx_word + 1
+    bx r0
+    .ltorg
+
+    .thumb
+    .align 2
+thumb_dabt_ldr:
+    ldr r1, [r4]
+    ldr r2, =thumb_dabt_back
+    bx r2
+    .align 2
+thumb_bx_word:
+    bx r2
+    .align 2
+    .ltorg
+    .arm
+
+@ The last 16 bytes of the app (see link.ld): the data of probe 34, and the Thumb code of probe 36,
+@ which runs into 0x02006000.
+    .section .block3_end, "ax"
+block3_end:
+    .word 0x11111111, 0x22222222
+    .thumb
+block3_end_thumb:
+    mov r8, r8
+    mov r8, r8
+    mov r8, r8
+    mov r8, r8
+    .arm
